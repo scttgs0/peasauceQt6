@@ -25,6 +25,8 @@ LENGTH_V3_HEADER_B = 55
 class File(object):
     EXPECTED_SUFFIX = "z80"
 
+    header_page_count_8kb: int = 0
+
 
 def identify_input_file(input_file, file_info, data_types, f_offset=0, f_length=None):
     result = constants.MatchResult()
@@ -39,16 +41,16 @@ def identify_input_file(input_file, file_info, data_types, f_offset=0, f_length=
         input_file.seek(f_offset + OFFSET_V23_HEADER_LENGTH)
         header2_length = data_types.uint16(input_file.read(2))
         if header2_length == LENGTH_V2_HEADER:
-            result.file_format_id = constants.FILE_FORMAT_ZXSPECTRUM_Z80_2
+            result.file_format_id = constants.FileFormat.ZXSPECTRUM_Z80_2
         elif header2_length in (LENGTH_V3_HEADER_A, LENGTH_V3_HEADER_B):
-            result.file_format_id = constants.FILE_FORMAT_ZXSPECTRUM_Z80_3
+            result.file_format_id = constants.FileFormat.ZXSPECTRUM_Z80_3
 
-        if result.file_format_id != constants.FILE_FORMAT_UNKNOWN:
+        if result.file_format_id != constants.FileFormat.UNKNOWN:
             result.confidence = constants.MATCH_PROBABLE
     else:
-        result.file_format_id = constants.FILE_FORMAT_ZXSPECTRUM_Z80_1
+        result.file_format_id = constants.FileFormat.ZXSPECTRUM_Z80_1
 
-    if result.file_format_id != constants.FILE_FORMAT_UNKNOWN:
+    if result.file_format_id != constants.FileFormat.UNKNOWN:
         result.platform_id = constants.PLATFORM_ZXSPECTRUM
 
     return result
@@ -62,7 +64,7 @@ def load_z80_file(file_info, data_types, f, f_offset=0, f_length=None):
     # Offset    Bytes   ...
     data = File()
     # 0         2       8kb page count
-    data._header_page_count_8kb = data_types.uint16(f.read(2))
+    data.header_page_count_8kb = data_types.uint16(f.read(2))
     # 2         1       emulation mode?
     f.read(1)
     # 3         5       reserved

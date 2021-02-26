@@ -121,7 +121,7 @@ class ArchMIPS(ArchInterface):
         return mode_format
 
     def function_disassemble_one_line(self, data, data_idx, data_abs_idx):
-        return super(self.__class__, self).function_disassemble_one_line(data, data_idx, data_abs_idx)
+        return super().function_disassemble_one_line(data, data_idx, data_abs_idx)
 
     def function_disassemble_as_data(self, data, data_idx):
         """ If a non-zero value is returned, it is the number of bytes to disassemble as data. """

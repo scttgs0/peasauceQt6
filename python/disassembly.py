@@ -6,6 +6,27 @@ from __future__ import print_function
     Licensed using the MIT license.
 """
 
+import binascii
+import bisect
+import copy
+import io
+import logging
+import operator
+import os
+import threading
+from typing import Tuple, List, Set, Union, Callable, Optional
+
+from . import loaderlib
+from .loaderlib.constants import DATA_TYPE_ASCII, DATA_TYPE_CODE, DATA_TYPE_DATA08, \
+    DATA_TYPE_DATA16, DATA_TYPE_DATA32, Processor
+from . import disassemblylib
+from .disassemblylib import util
+from . import disassembly_data
+from . import disassembly_persistence
+from . import util
+from .disassembly_util import WorkState
+
+
 DEBUG_ANNOTATE_DISASSEMBLY = True
 
 # COPIED FROM archm68k.py
@@ -15,27 +36,6 @@ MAF_CONSTANT_VALUE = 4
 MAF_UNCERTAIN = 8
 MAF_CERTAIN = 16
 
-import binascii
-import bisect
-import copy
-import io
-import logging
-import operator
-import os
-import threading
-import types
-# mypy-lang support
-from typing import Tuple, List, Set, Union, Any, Callable
-
-import loaderlib
-import disassemblylib
-import disassemblylib.util
-import disassembly_data
-import disassembly_persistence
-import persistence
-import util
-# mypy-lang support
-from disassembly_util import WorkState
 
 logger = logging.getLogger("disassembly")
 
@@ -45,12 +45,12 @@ logger = logging.getLogger("disassembly")
 # There are two actors that can be involved in race conditions.
 # 1) The main thread which receives events and reacts by asking for display data from the state manager (this file) on the main thread.
 # 2) The active logic thread in progress, which is changing data types and may be in the act of modifying data.
-# 
+#
 # The active logic thread cannot lock everything for the duration of it's action, or the main thread will not be able to do it's job of continually updating the display.
 # The main thread will already be doing an abstract isolated action (get line count, get detail for some line in the display) so can lock for the duration of it's action.
 #
 # The implication seems to be that the active logic should be inverted and prolonged actions where possible divided into individually locked sub-steps.
-# 
+#
 
 line_count_rlock = threading.RLock()
 
@@ -124,7 +124,7 @@ def find_previous_instruction(program_data, block, line_data, idx):
 
 SEGMENT_HEADER_LINE_COUNT = 2
 
-def get_block_header_line_count(program_data, block):
+def get_block_header_line_count(program_data, block) -> int:
     # type: (disassembly_data.ProgramData, disassembly_data.SegmentBlock) -> int
     if block.segment_offset == 0 and loaderlib.has_segment_headers(program_data.loader_system_name):
         return SEGMENT_HEADER_LINE_COUNT
@@ -148,7 +148,8 @@ def get_block_line_count(program_data, block):
     line_count = get_block_header_line_count(program_data, block)
 
     data_type = disassembly_data.get_block_data_type(block)
-    if data_type == disassembly_data.DATA_TYPE_CODE:
+    if data_type == DATA_TYPE_CODE:
+        assert block.line_data is not None
         for line_idx, (type_id, entry) in enumerate(block.line_data):
             if type_id == disassembly_data.SLD_INSTRUCTION:
                 entry = get_instruction_entry(program_data, block, block.line_data, line_idx)
@@ -159,7 +160,8 @@ def get_block_line_count(program_data, block):
         sizes = get_data_type_sizes(block)
         for data_size, num_bytes, size_count, size_lines in sizes:
             line_count += size_lines
-    elif data_type == disassembly_data.DATA_TYPE_ASCII:
+    elif data_type == DATA_TYPE_ASCII:
+        assert block.line_data is not None
         line_count = len(block.line_data)
     else:
         # This will cause an error, but if it is happening, there are larger problems.
@@ -218,7 +220,7 @@ def get_code_block_info_for_address(program_data, address):
 def get_code_block_info_for_line_number(program_data, line_number):
     # type: (disassembly_data.ProgramData, int) -> Union[None, InstructionEntry]
     block, block_idx = lookup_block_by_line_count(program_data, line_number)
-    if disassembly_data.get_block_data_type(block) != disassembly_data.DATA_TYPE_CODE:
+    if disassembly_data.get_block_data_type(block) != DATA_TYPE_CODE:
         return None
     base_address = program_data.block_addresses[block_idx]
 
@@ -264,7 +266,7 @@ def get_line_number_for_address(program_data, address):
     # type: (disassembly_data.ProgramData, int) -> Union[None, int]
     block, block_idx = lookup_block_by_address(program_data, address)
     data_type = disassembly_data.get_block_data_type(block)
-    if data_type == disassembly_data.DATA_TYPE_CODE:
+    if data_type == DATA_TYPE_CODE:
         result = get_code_block_info_for_address(program_data, address)
         return result[0]
 
@@ -280,7 +282,7 @@ def get_line_number_for_address(program_data, address):
             block_lineN += size_lines
             if address_block_offset >= block_offset0 and address_block_offset < block_offsetN:
                 return int((block_line0 + (address_block_offset - block_offset0) / num_bytes))
-    elif data_type == disassembly_data.DATA_TYPE_ASCII:
+    elif data_type == DATA_TYPE_ASCII:
         block_lineN = get_block_line_number(program_data, block_idx) + get_block_header_line_count(program_data, block)
         address_block_offset = address - block.address
         for byte_offset, byte_length in block.line_data:
@@ -313,7 +315,7 @@ def get_address_for_line_number(program_data, line_number):
     data_type = disassembly_data.get_block_data_type(block)
     #logger.debug("get_address_for_line_number: data type = %d", data_type)
 
-    if data_type == disassembly_data.DATA_TYPE_CODE:
+    if data_type == DATA_TYPE_CODE:
         result = get_code_block_info_for_line_number(program_data, line_number)
         if result is not None:
             address, match = result
@@ -329,7 +331,7 @@ def get_address_for_line_number(program_data, line_number):
             block_lineN += size_lines
             if line_number >= block_line0 and line_number < block_lineN:
                 return block.address + block_offset0 + (line_number - block_line0) * num_bytes
-    elif data_type == disassembly_data.DATA_TYPE_ASCII:
+    elif data_type == DATA_TYPE_ASCII:
         base_line_count = get_block_line_number(program_data, block_idx) + get_block_header_line_count(program_data, block)
         block_lineN = base_line_count
         block_offsetN = 0
@@ -352,10 +354,10 @@ def get_all_references(program_data):
         if target_block.address != target_address:
             logger.error("get_all_references: analysing reference referrers, target address mismatch: %X != %X", target_block.address, target_address)
             continue
-        if disassembly_data.get_block_data_type(target_block) == disassembly_data.DATA_TYPE_DATA32:
+        if disassembly_data.get_block_data_type(target_block) == DATA_TYPE_DATA32:
             for source_address in referring_addresses:
                 source_block, source_block_idx = lookup_block_by_address(program_data, source_address)
-                if disassembly_data.get_block_data_type(source_block) == disassembly_data.DATA_TYPE_CODE:
+                if disassembly_data.get_block_data_type(source_block) == DATA_TYPE_CODE:
                     line_number, match = get_code_block_info_for_address(program_data, source_address)
 """
 
@@ -386,7 +388,7 @@ def get_block_footer_line_count(program_data: disassembly_data.ProgramData, bloc
     if block.segment_offset + block.length == loaderlib.get_segment_length(segments, block.segment_id):
         if block.segment_id < len(segments)-1:
             line_count += 1 # SEGMENT FOOTER (blank line)
-    elif disassembly_data.get_block_data_type(block) == disassembly_data.DATA_TYPE_CODE:
+    elif disassembly_data.get_block_data_type(block) == DATA_TYPE_CODE:
         entry_type_id, entry = block.line_data[-1]
         if entry_type_id == disassembly_data.SLD_INSTRUCTION:
             line_idx = len(block.line_data) - 1
@@ -401,7 +403,7 @@ def get_block_footer_line_count(program_data: disassembly_data.ProgramData, bloc
             if line_count == 0 and block_idx+1 < len(program_data.blocks):
                 next_block = program_data.blocks[block_idx+1]
                 if next_block.segment_id == block.segment_id:
-                    if disassembly_data.get_block_data_type(next_block) != disassembly_data.DATA_TYPE_CODE:
+                    if disassembly_data.get_block_data_type(next_block) != DATA_TYPE_CODE:
                         line_count += 1
     else:
         if False:
@@ -409,7 +411,7 @@ def get_block_footer_line_count(program_data: disassembly_data.ProgramData, bloc
             if block_idx+1 < len(program_data.blocks):
                 next_block = program_data.blocks[block_idx+1]
                 if next_block.segment_id == block.segment_id:
-                    if disassembly_data.get_block_data_type(next_block) == disassembly_data.DATA_TYPE_CODE:
+                    if disassembly_data.get_block_data_type(next_block) == DATA_TYPE_CODE:
                         line_count += 1
     return line_count
 
@@ -529,7 +531,7 @@ def get_file_line(program_data, line_idx, column_idx): # Zero-based
     data_type = disassembly_data.get_block_data_type(block)
 
     ## Block content line generation.
-    if data_type == disassembly_data.DATA_TYPE_CODE:
+    if data_type == DATA_TYPE_CODE:
         block_offset0 = 0
         block_offsetN = 0
         line_count = block_line_count0 + leading_line_count
@@ -640,16 +642,16 @@ def get_file_line(program_data, line_idx, column_idx): # Zero-based
                     label = None
 
                     # TODO(rmtew): Should this be per-architecture pointer sized, not just 32 bit?
-                    if data_size == disassembly_data.DATA_TYPE_DATA32:
+                    if data_size == DATA_TYPE_DATA32:
                         referring_address = loaderlib.get_segment_address(segments, block.segment_id) + data_idx
                         label = get_potential_symbol_for_address(program_data, value, referring_address)
-                        
+
                     if label is None:
                         label = ("$%0"+ str(num_bytes<<1) +"X") % value
                     return label
                 elif DEBUG_ANNOTATE_DISASSEMBLY and column_idx == LI_ANNOTATIONS:
                     return "-"
-    elif data_type == disassembly_data.DATA_TYPE_ASCII:
+    elif data_type == DATA_TYPE_ASCII:
         block_lineN = block_line_count0 + leading_line_count
         block_offsetN = block.segment_offset
         for i, (byte_offset, byte_length) in enumerate(block.line_data):
@@ -671,7 +673,7 @@ def get_file_line(program_data, line_idx, column_idx): # Zero-based
                         return ""
                     return label
                 elif column_idx == LI_INSTRUCTION:
-                    return loaderlib.get_data_instruction_string(program_data.loader_system_name, segments, block.segment_id, disassembly_data.DATA_TYPE_DATA08, True)
+                    return loaderlib.get_data_instruction_string(program_data.loader_system_name, segments, block.segment_id, DATA_TYPE_DATA08, True)
                 elif column_idx == LI_OPERANDS:
                     string = ""
                     last_value = None
@@ -974,7 +976,7 @@ def split_block(program_data, address, own_midinstruction=False):
     block_length_reduced = block.length - excess_length
 
     # Do some pre-split code block validation.
-    if block_data_type == disassembly_data.DATA_TYPE_CODE:
+    if block_data_type == DATA_TYPE_CODE:
         offsetN = 0
         for i, (type_id, entry) in enumerate(block.line_data):
             # Comments are assumed to be related to succeeding instruction lines, so are grouped for purposes of splitting.
@@ -1028,10 +1030,10 @@ def split_block(program_data, address, own_midinstruction=False):
     new_block.length = excess_length
     new_block.references = new_block_references
 
-    if block_data_type == disassembly_data.DATA_TYPE_CODE:
+    if block_data_type == DATA_TYPE_CODE:
         block.line_data = block_line_data
         new_block.line_data = split_block_line_data
-    elif block_data_type == disassembly_data.DATA_TYPE_ASCII:
+    elif block_data_type == DATA_TYPE_ASCII:
         _process_block_as_ascii(program_data, block)
         _process_block_as_ascii(program_data, new_block)
 
@@ -1131,7 +1133,7 @@ def set_block_data_type(program_data, data_type, block, block_idx=None, work_sta
     # At this point we are attempting to change a block from one data type to another.
     program_data.new_block_events = []
     program_data.block_data_type_events = []
-    if data_type == disassembly_data.DATA_TYPE_CODE:
+    if data_type == DATA_TYPE_CODE:
         # Force this, so that the attempt can go ahead.
         block.flags &= ~disassembly_data.BLOCK_FLAG_PROCESSED
         # This can fail, so we do not explicitly change the block ourselves.
@@ -1167,7 +1169,7 @@ def set_block_data_type(program_data, data_type, block, block_idx=None, work_sta
     for k, (affected_block, data_type_old, data_type_new, length_old) in event_blocks.items():
         do_broadcast = False
         old_references = affected_block.references
-        if data_type_new == disassembly_data.DATA_TYPE_CODE:
+        if data_type_new == DATA_TYPE_CODE:
             affected_block.references = _locate_uncertain_code_references(program_data, affected_block.address, is_binary_file, affected_block)
         else:
             affected_block.references = _locate_uncertain_data_references(program_data, affected_block.address)
@@ -1247,11 +1249,11 @@ def _get_byte_representation(byte):
     return "$%X" % byte
 
 __label_metadata = {
-    disassembly_data.DATA_TYPE_CODE: disassemblylib.constants.DIS_ID_CODE,
-    disassembly_data.DATA_TYPE_ASCII: disassemblylib.constants.DIS_ID_ASCII,
-    disassembly_data.DATA_TYPE_DATA08: disassemblylib.constants.DIS_ID_DATA08,
-    disassembly_data.DATA_TYPE_DATA16: disassemblylib.constants.DIS_ID_DATA16,
-    disassembly_data.DATA_TYPE_DATA32: disassemblylib.constants.DIS_ID_DATA32,
+    DATA_TYPE_CODE: disassemblylib.constants.DIS_ID_CODE,
+    DATA_TYPE_ASCII: disassemblylib.constants.DIS_ID_ASCII,
+    DATA_TYPE_DATA08: disassemblylib.constants.DIS_ID_DATA08,
+    DATA_TYPE_DATA16: disassemblylib.constants.DIS_ID_DATA16,
+    DATA_TYPE_DATA32: disassemblylib.constants.DIS_ID_DATA32,
 }
 
 def get_auto_label(program_data, address, data_type):
@@ -1292,10 +1294,10 @@ def _internal_set_block_data(program_data, block, block_idx, new_data_type, old_
         temp_block = disassembly_data.SegmentBlock(block)
         disassembly_data.set_block_data_type(temp_block, new_data_type)
 
-        if new_data_type == disassembly_data.DATA_TYPE_CODE:
+        if new_data_type == DATA_TYPE_CODE:
             temp_block.line_data = line_data
         else:
-            if new_data_type == disassembly_data.DATA_TYPE_ASCII:
+            if new_data_type == DATA_TYPE_ASCII:
                 _process_block_as_ascii(program_data, temp_block)
             else:
                 temp_block.line_data = None
@@ -1332,7 +1334,7 @@ def _process_address_as_code(program_data, address, pending_symbol_addresses, wo
     disassembly_offsets = set([ address ])
     while len(disassembly_offsets):
         if work_state is not None:
-            extra_fraction = sum(block.length for block in program_data.blocks if disassembly_data.get_block_data_type(block) == disassembly_data.DATA_TYPE_CODE) / float(program_data.file_size) * 0.6
+            extra_fraction = sum(block.length for block in program_data.blocks if disassembly_data.get_block_data_type(block) == DATA_TYPE_CODE) / float(program_data.file_size) * 0.6
             if work_state.check_exit_update(0.2 + extra_fraction, "TEXT_LOAD_DISASSEMBLY_PASS"):
                 return
 
@@ -1349,8 +1351,8 @@ def _process_address_as_code(program_data, address, pending_symbol_addresses, wo
             block, block_idx = result
             # address = block.address Superfluous due to it being the split address.
 
-        if block_data_type == disassembly_data.DATA_TYPE_CODE or (block.flags & disassembly_data.BLOCK_FLAG_PROCESSED) == disassembly_data.BLOCK_FLAG_PROCESSED:
-            # logger.debug("_process_address_as_code[%X]: skipping because it is code (%s) or already processed (%s), data type (%d)", block.address, block_data_type == disassembly_data.DATA_TYPE_CODE, (block.flags & disassembly_data.BLOCK_FLAG_PROCESSED) == disassembly_data.BLOCK_FLAG_PROCESSED, disassembly_data.get_block_data_type(block))
+        if block_data_type == DATA_TYPE_CODE or (block.flags & disassembly_data.BLOCK_FLAG_PROCESSED) == disassembly_data.BLOCK_FLAG_PROCESSED:
+            # logger.debug("_process_address_as_code[%X]: skipping because it is code (%s) or already processed (%s), data type (%d)", block.address, block_data_type == DATA_TYPE_CODE, (block.flags & disassembly_data.BLOCK_FLAG_PROCESSED) == disassembly_data.BLOCK_FLAG_PROCESSED, disassembly_data.get_block_data_type(block))
             continue
 
         # Disassemble as much of the block's data as possible.
@@ -1396,7 +1398,7 @@ def _process_address_as_code(program_data, address, pending_symbol_addresses, wo
             # [ (address, new_data_type, attempt_to_disassemble), ... ]
             split_addresses = []
             last_match_end_address = address + bytes_consumed
-            longword_flags = disassembly_data.get_data_type_block_flags(disassembly_data.DATA_TYPE_DATA32)
+            longword_flags = disassembly_data.get_data_type_block_flags(DATA_TYPE_DATA32)
             # Reasons we are here:
             if found_terminating_instruction:
                 # 1. We reached a terminating instruction before the end of the block (found_terminating_instruction is True).
@@ -1441,7 +1443,7 @@ def _process_address_as_code(program_data, address, pending_symbol_addresses, wo
         if len(line_data) == 0:
             continue
 
-        _internal_set_block_data(program_data, block, block_idx, disassembly_data.DATA_TYPE_CODE, old_block_length, line_data)
+        _internal_set_block_data(program_data, block, block_idx, DATA_TYPE_CODE, old_block_length, line_data)
 
         # Extract any addresses which are referred to, for later use.
         is_binary_file = (program_data.flags & disassembly_data.PDF_BINARY_FILE) == disassembly_data.PDF_BINARY_FILE
@@ -1487,7 +1489,7 @@ def _process_address_as_code(program_data, address, pending_symbol_addresses, wo
 
     for address in debug_offsets:
         block, block_idx = lookup_block_by_address(program_data, address)
-        if disassembly_data.get_block_data_type(block) == disassembly_data.DATA_TYPE_CODE and block.flags & disassembly_data.BLOCK_FLAG_PROCESSED:
+        if disassembly_data.get_block_data_type(block) == DATA_TYPE_CODE and block.flags & disassembly_data.BLOCK_FLAG_PROCESSED:
             continue
         logger.debug("%06X (%06X): Found end of block boundary with processed code and no end instruction (data type: %d, processed: %d)", address, block.address, disassembly_data.get_block_data_type(block), block.flags & disassembly_data.BLOCK_FLAG_PROCESSED)
 
@@ -1518,7 +1520,7 @@ def api_load_project_file(save_file, file_name, work_state=None):
     program_data.file_name = file_name
 
     for block in program_data.blocks:
-        if disassembly_data.get_block_data_type(block) == disassembly_data.DATA_TYPE_ASCII:
+        if disassembly_data.get_block_data_type(block) == DATA_TYPE_ASCII:
             _process_block_as_ascii(program_data, block)
 
     onload_set_disassemblylib_functions(program_data)
@@ -1598,7 +1600,7 @@ def api_load_file(input_file, new_options, file_name, work_state=None):
         block = disassembly_data.SegmentBlock()
         if loaderlib.is_segment_type_bss(segments, segment_id):
             block.flags |= disassembly_data.BLOCK_FLAG_ALLOC
-        disassembly_data.set_block_data_type(block, disassembly_data.DATA_TYPE_DATA32)
+        disassembly_data.set_block_data_type(block, DATA_TYPE_DATA32)
         block.segment_id = segment_id
         block.segment_offset = 0
         block.address = address
@@ -1612,7 +1614,7 @@ def api_load_file(input_file, new_options, file_name, work_state=None):
         if segment_length > data_length:
             block = disassembly_data.SegmentBlock()
             block.flags |= disassembly_data.BLOCK_FLAG_ALLOC
-            disassembly_data.set_block_data_type(block, disassembly_data.DATA_TYPE_DATA32)
+            disassembly_data.set_block_data_type(block, DATA_TYPE_DATA32)
             block.segment_id = segment_id
             block.segment_offset = data_length
             block.address = address + data_length
@@ -1666,7 +1668,7 @@ def api_load_file(input_file, new_options, file_name, work_state=None):
 
 def platform_specific_processing(program_data, work_state=None):
     # type: (disassembly_data.ProgramData, WorkState) -> None
-    if program_data.processor_id == loaderlib.constants.PROCESSOR_M680x0:
+    if program_data.processor_id == Processor.M680x0:
         if program_data.loader_system_name == loaderlib.amiga.__name__:
             platform_specific_processing_M680x0_amiga(program_data, work_state)
 
@@ -1677,9 +1679,9 @@ def platform_specific_processing_M680x0_amiga(program_data, work_state=None):
 
     # Where library handles are fetched for usage.  key: fetch address.  value: (address_register_number, library_handle).
     library_handle_fetches = {} # type: Dict[int, Tuple[int, Union[None, int]]]
-    # When library handles are used.  key: usage address.  value: (address_register_number, library_handle). 
+    # When library handles are used.  key: usage address.  value: (address_register_number, library_handle).
     library_handle_usage = {} # type: Dict[int, Tuple[int, Union[None, int]]]
-    # When a library handle is stored in a pointer.  key: None means exec library, otherwise handle address.  value: pointer addresses handle is copied to.  
+    # When a library handle is stored in a pointer.  key: None means exec library, otherwise handle address.  value: pointer addresses handle is copied to.
     library_handle_stores = {} # type: Dict[Union[None, int], Set[int]]
     # When a library is opened.  key: open call address.  value: name_address
     library_open_calls = {} # type: Dict[int, int]
@@ -1688,7 +1690,7 @@ def platform_specific_processing_M680x0_amiga(program_data, work_state=None):
     library_calls = []
     for block in program_data.blocks:
         block_data_type = disassembly_data.get_block_data_type(block)
-        if block_data_type == disassembly_data.DATA_TYPE_CODE:
+        if block_data_type == DATA_TYPE_CODE:
             for line_idx, (type_id, instruction) in enumerate(block.line_data):
                 if type_id == disassembly_data.SLD_INSTRUCTION:
                     instruction = get_instruction_entry(program_data, block, block.line_data, line_idx)
@@ -1698,7 +1700,7 @@ def platform_specific_processing_M680x0_amiga(program_data, work_state=None):
                         instruction_operand1 = instruction.opcodes[1]
                         # We can follow references for real store addresses, but exec base is a special case (at least for now).
                         if instruction.specification.key == "MOVE.L" and instruction_operand0.key == "AbsW" and instruction_operand1.key == "AbsL":
-                            source_address = program_data.dis_get_operand_value_func(instruction, instruction_operand0.key, instruction_operand0.vars)                            
+                            source_address = program_data.dis_get_operand_value_func(instruction, instruction_operand0.key, instruction_operand0.vars)
                             if source_address == AMIGA_EXEC_BASE_ADDRESS:
                                 destination_address = program_data.dis_get_operand_value_func(instruction, instruction_operand1.key, instruction_operand1.vars)
                                 if None not in library_handle_stores:
@@ -1752,7 +1754,7 @@ def platform_specific_processing_M680x0_amiga(program_data, work_state=None):
                             if current_instruction.specification.key == "LEA":
                                 current_source_operand = current_instruction.opcodes[0]
                                 if current_source_operand.key in ("PCid16", "PCid8", "AbsW", "AbsL"):
-                                    address_register_values[current_dest_register_number] = program_data.dis_get_operand_value_func(current_instruction, current_source_operand.key, current_source_operand.vars) 
+                                    address_register_values[current_dest_register_number] = program_data.dis_get_operand_value_func(current_instruction, current_source_operand.key, current_source_operand.vars)
                                 else:
                                     # raise Exception("Unexpected operand type", current_source_operand.key)
                                     logger.debug("on_instruction_matched: Unexpected operand type %s", current_source_operand.key)
@@ -1804,7 +1806,7 @@ def platform_specific_processing_M680x0_amiga(program_data, work_state=None):
 
                     # Change the library name data type to ASCII.
                     library_name_block, library_name_block_idx = lookup_block_by_address(program_data, library_name_address)
-                    set_block_data_type(program_data, disassembly_data.DATA_TYPE_ASCII, library_name_block, block_idx=library_name_block_idx, address=library_name_address, work_state=work_state)
+                    set_block_data_type(program_data, DATA_TYPE_ASCII, library_name_block, block_idx=library_name_block_idx, address=library_name_address, work_state=work_state)
                     library_name_block, library_name_block_idx = lookup_block_by_address(program_data, library_name_address)
 
                     # Rename the symbol if it has a stock name.
@@ -1933,7 +1935,7 @@ class CodeAnalysis(object):
     def get_first_instruction(self, block):
         # type: (disassembly_data.SegmentBlock) -> Tuple[int, Union[None, Instruction]]
         block_data_type = disassembly_data.get_block_data_type(block)
-        if block_data_type == disassembly_data.DATA_TYPE_CODE:
+        if block_data_type == DATA_TYPE_CODE:
             for line_idx, (type_id, instruction) in enumerate(block.line_data):
                 if type_id == disassembly_data.SLD_INSTRUCTION:
                     return line_idx, get_instruction_entry(self.program_data, block, block.line_data, line_idx)
@@ -1973,7 +1975,7 @@ class CodeAnalysis(object):
 
     def _preprocess(self):
         self.library_calls = []
-        self.library_handle_stores = {} # 
+        self.library_handle_stores = {} #
 
         for block in self.program_data.blocks:
             line_idx, instruction = self.get_first_instruction(block)
@@ -2175,11 +2177,11 @@ def onload_make_address_ranges(program_data):
 
 def onload_cache_uncertain_references(program_data):
     """ line_count_rlock """
-    # type: (disassembly_data.ProgramData) -> None    
+    # type: (disassembly_data.ProgramData) -> None
     is_binary_file = (program_data.flags & disassembly_data.PDF_BINARY_FILE) == disassembly_data.PDF_BINARY_FILE
     for block in program_data.blocks:
         data_type = disassembly_data.get_block_data_type(block)
-        if data_type == disassembly_data.DATA_TYPE_CODE:
+        if data_type == DATA_TYPE_CODE:
             block.references = _locate_uncertain_code_references(program_data, block.address, is_binary_file, block)
         elif is_binary_file:
             block.references = _locate_uncertain_data_references(program_data, block.address, block)
@@ -2210,7 +2212,7 @@ def DEBUG_log_load_stats(program_data):
     num_code_blocks = 0
     num_code_bytes = 0
     for block in program_data.blocks:
-        if disassembly_data.get_block_data_type(block) == disassembly_data.DATA_TYPE_CODE:
+        if disassembly_data.get_block_data_type(block) == DATA_TYPE_CODE:
             num_code_bytes += block.length
             num_code_blocks += 1
     logger.debug("Initial result, code bytes: %d, code blocks: %d", num_code_bytes, num_code_blocks)
@@ -2219,7 +2221,7 @@ def DEBUG_locate_potential_code_blocks(program_data):
     # type: (disassembly_data.ProgramData) -> List[disassembly_data.SegmentBlock]
     blocks = []
     for block in program_data.blocks:
-        if disassembly_data.get_block_data_type(block) != disassembly_data.DATA_TYPE_CODE and block.length >= 2:
+        if disassembly_data.get_block_data_type(block) != DATA_TYPE_CODE and block.length >= 2:
             data = loaderlib.get_segment_data(program_data.loader_segments, block.segment_id)
             offset_start = block.length - 2
             data_offset_start = block.segment_offset + offset_start
@@ -2261,8 +2263,7 @@ class DisassemblyApi(object):
         with line_count_rlock:
             return get_line_number_for_address(self._program_data, address)
 
-    def get_address_for_line_number(self, line_number):
-        # type: (int) -> Union[int, None]
+    def get_address_for_line_number(self, line_number: int) -> Optional[int]:
         return api_get_address_for_line_number(self._program_data, line_number)
 
     def get_referenced_symbol_addresses_for_line_number(self, line_number: int) -> List[Tuple[int, int]]:
@@ -2278,7 +2279,7 @@ class DisassemblyApi(object):
 
             block, block_idx = lookup_block_by_line_count(self._program_data, line_number)
             data_type = disassembly_data.get_block_data_type(block)
-            if data_type == disassembly_data.DATA_TYPE_DATA32:
+            if data_type == DATA_TYPE_DATA32:
                 address = get_address_for_line_number(self._program_data, line_number)
                 data = loaderlib.get_segment_data(self._program_data.loader_segments, block.segment_id)
                 value = self._program_data.loader_data_types.uint32_value(data, block.segment_offset + (address - block.address))
@@ -2306,7 +2307,7 @@ class DisassemblyApi(object):
         # TODO(rmtew): This should be refactored into a general function when the best form becomes obvious.
         block, block_idx = lookup_block_by_address(self._program_data, referring_address)
         data_type = disassembly_data.get_block_data_type(block)
-        if data_type == disassembly_data.DATA_TYPE_DATA32:
+        if data_type == DATA_TYPE_DATA32:
             block_addressN = block.address
             sizes = get_data_type_sizes(block)
             for i, (data_size, num_bytes, size_count, size_lines) in enumerate(sizes):
@@ -2384,7 +2385,7 @@ class DisassemblyApi(object):
         results = [] # type: List[UncertainReference]
         for block in self._program_data.blocks:
             data_type = disassembly_data.get_block_data_type(block)
-            if data_type != disassembly_data.DATA_TYPE_CODE and block.references:
+            if data_type != DATA_TYPE_CODE and block.references:
                 results.extend(block.references)
         return results
 
@@ -2393,7 +2394,7 @@ class DisassemblyApi(object):
         results = [] # type: List[UncertainReference]
         for block in self._program_data.blocks:
             data_type = disassembly_data.get_block_data_type(block)
-            if data_type == disassembly_data.DATA_TYPE_CODE and block.references:
+            if data_type == DATA_TYPE_CODE and block.references:
                 results.extend(block.references)
         return results
 

@@ -4,11 +4,12 @@
     Licensed using the MIT license.
 """
 
+from dataclasses import dataclass
 import io
 import logging
 import os
 import struct
-from typing import Any, IO, List
+from typing import Any, IO, List, Optional, Tuple
 
 from . import amiga
 from . import atarist
@@ -17,6 +18,7 @@ from . import human68k
 from . import snes
 from . import zxspectrum
 from . import constants
+from .constants import Endian
 
 
 logger = logging.getLogger("loader")
@@ -28,18 +30,17 @@ def _generate_module_data():
     global systems_by_name
     for module in (amiga, atarist, human68k, binary, snes, zxspectrum):
         system_name = module.__name__
-        system = systems_by_name[system_name] = module.System()
-        system.system_name = system_name
+        systems_by_name[system_name] = module.System(system_name)
 _generate_module_data()
 
 def get_system(system_name):
     return systems_by_name[system_name]
 
-def get_system_data_types(system_name):
+def get_system_data_types(system_name: str) -> "DataTypes":
     system = systems_by_name[system_name]
     return DataTypes(system.endian_id)
 
-def load_file(input_file, file_name, loader_options=None, file_offset=0, file_length=None):
+def load_file(input_file, file_name, loader_options=None, file_offset=0, file_length=None) -> Optional[Tuple["FileInfo", "DataTypes"]]:
     for system_name, system in systems_by_name.items():
         file_info = FileInfo(system, file_name, loader_options)
         data_types = get_system_data_types(system_name)
@@ -59,7 +60,7 @@ def identify_file(input_file, file_name, file_offset=0, file_length=None):
         matches.sort(key = lambda v: v[1].confidence)
         file_info, match, system = matches[0]
 
-        if match.file_format_id != constants.FILE_FORMAT_UNKNOWN and match.confidence != constants.MATCH_NONE:
+        if match.file_format_id != constants.FileFormat.UNKNOWN and match.confidence != constants.MATCH_NONE:
             result = {}
             result["processor"] = system.get_processor_id()
             result["platform"] = match.platform_id
@@ -72,41 +73,43 @@ SEGMENT_TYPE_CODE = 1
 SEGMENT_TYPE_DATA = 2
 SEGMENT_TYPE_BSS = 3
 
-SI_TYPE = 0
-SI_FILE_OFFSET = 1
-SI_DATA_LENGTH = 2
-SI_LENGTH = 3
-SI_ADDRESS = 4
-SI_CACHED_DATA = 5
-SIZEOF_SI = 6
+
+@dataclass
+class Segment:
+    type: int
+    file_offset: int
+    data_length: int
+    length: int
+    address: int
+    cached_data: Any
 
 
 def get_segment_type(segments, segment_id):
-    return segments[segment_id][SI_TYPE]
+    return segments[segment_id].type
 
 def get_segment_data_file_offset(segments, segment_id):
-    return segments[segment_id][SI_FILE_OFFSET]
+    return segments[segment_id].file_offset
 
 def get_segment_data_length(segments, segment_id):
-    return segments[segment_id][SI_DATA_LENGTH]
+    return segments[segment_id].data_length
 
 def get_segment_length(segments, segment_id):
-    return segments[segment_id][SI_LENGTH]
+    return segments[segment_id].length
 
 def get_segment_address(segments, segment_id):
-    return segments[segment_id][SI_ADDRESS]
+    return segments[segment_id].address
 
 def get_segment_data(segments, segment_id):
-    return segments[segment_id][SI_CACHED_DATA]
+    return segments[segment_id].cached_data
 
 def is_segment_type_code(segments, segment_id):
-    return segments[segment_id][SI_TYPE] == SEGMENT_TYPE_CODE
+    return segments[segment_id].type == SEGMENT_TYPE_CODE
 
 def is_segment_type_data(segments, segment_id):
-    return segments[segment_id][SI_TYPE] == SEGMENT_TYPE_DATA
+    return segments[segment_id].type == SEGMENT_TYPE_DATA
 
 def is_segment_type_bss(segments, segment_id):
-    return segments[segment_id][SI_TYPE] == SEGMENT_TYPE_BSS
+    return segments[segment_id].type == SEGMENT_TYPE_BSS
 
 def cache_segment_data(input_file: io.RawIOBase, segments: List[Any], segment_id: int, base_file_offset: int=0) -> None:
     """
@@ -125,7 +128,7 @@ def cache_segment_data(input_file: io.RawIOBase, segments: List[Any], segment_id
             data = memoryview(file_data)
         else:
             logger.error("Unable to cache segment %d data, got %d bytes, wanted %d", segment_id, len(file_data), file_length)
-    segments[segment_id][SI_CACHED_DATA] = data
+    segments[segment_id].cached_data = data
 
 def relocate_segment_data(segments, data_types, relocations, relocatable_addresses, relocated_addresses):
     for segment_id in range(len(segments)):
@@ -166,7 +169,7 @@ def get_entrypoint_address(file_info):
 class DataTypes(object):
     def __init__(self, endian_id):
         self.endian_id = endian_id
-        self._endian_char = [ "<", ">" ][endian_id == constants.ENDIAN_BIG]
+        self._endian_char = [ "<", ">" ][endian_id == Endian.BIG]
 
         s = b"12345"
         bs = bytearray(s)
@@ -203,7 +206,7 @@ class DataTypes(object):
             pass
 
     def uint32_value_as_string(self, v):
-        if self.endian_id == constants.ENDIAN_BIG:
+        if self.endian_id == Endian.BIG:
             return struct.pack(">I", v)
         else:
             return struct.pack("<I", v)
@@ -211,37 +214,37 @@ class DataTypes(object):
     # String to value.
 
     def uint16(self, s):
-        if self.endian_id == constants.ENDIAN_BIG:
+        if self.endian_id == Endian.BIG:
             return struct.unpack(">H", s)[0]
         else:
             return struct.unpack("<H", s)[0]
 
     def int16(self, s):
-        if self.endian_id == constants.ENDIAN_BIG:
+        if self.endian_id == Endian.BIG:
             return struct.unpack(">h", s)[0]
         else:
             return struct.unpack("<h", s)[0]
 
     def uint32(self, s):
-        if self.endian_id == constants.ENDIAN_BIG:
+        if self.endian_id == Endian.BIG:
             return struct.unpack(">I", s)[0]
         else:
             return struct.unpack("<I", s)[0]
 
     def int32(self, s):
-        if self.endian_id == constants.ENDIAN_BIG:
+        if self.endian_id == Endian.BIG:
             return struct.unpack(">i", s)[0]
         else:
             return struct.unpack("<i", s)[0]
 
     def uint8(self, s):
-        if self.endian_id == constants.ENDIAN_BIG:
+        if self.endian_id == Endian.BIG:
             return struct.unpack(">B", s)[0]
         else:
             return struct.unpack("<B", s)[0]
 
     def int8(self, s):
-        if self.endian_id == constants.ENDIAN_BIG:
+        if self.endian_id == Endian.BIG:
             return struct.unpack(">b", s)[0]
         else:
             return struct.unpack("<b", s)[0]
@@ -314,13 +317,8 @@ class FileInfo(object):
         segment_address = self.load_address
         if segment_id > 0:
             segment_address = get_segment_address(self.segments, segment_id-1) + get_segment_length(self.segments, segment_id-1)
-        segment = [ None ] * SIZEOF_SI
-        segment[SI_TYPE] = segment_type
-        segment[SI_FILE_OFFSET] = file_offset
-        segment[SI_DATA_LENGTH] = data_length
-        segment[SI_LENGTH] = segment_length
-        segment[SI_ADDRESS] = segment_address
-        segment[SI_CACHED_DATA] = None
+
+        segment = Segment(segment_type, file_offset, data_length, segment_length, segment_address, None)
         self.segments.append(segment)
 
         self.relocations_by_segment_id.append(relocations)
@@ -330,14 +328,12 @@ class FileInfo(object):
         self.entrypoint_segment_id = segment_id
         self.entrypoint_offset = offset
 
-    def get_entrypoint(self):
-        return self.entrypoint
-
     ## Segment querying related operations
 
-class BinaryFileOptions(object):
+
+class BinaryFileOptions:
     is_binary_file = True
-    processor_id = None # type: int
-    load_address = None # type: int
-    entrypoint_segment_id = 0
-    entrypoint_offset = None # type: int
+    processor_id: Optional[int] = None
+    load_address: Optional[int] = None
+    entrypoint_segment_id: int = 0
+    entrypoint_offset: Optional[int] = None

@@ -5,8 +5,10 @@
 """
 
 import io
+from typing import Any, Dict, List, Optional, Tuple
 
-from typing import List, Any, Tuple
+from .loaderlib.constants import DATA_TYPE_BIT0, DATA_TYPE_BITCOUNT, DATA_TYPE_BITMASK, \
+    DATA_TYPE_DATA08, DATA_TYPE_DATA16, DATA_TYPE_DATA32, DATA_TYPE_SIZES, FileFormat, Processor
 
 ## ProgramData related.
 
@@ -17,35 +19,6 @@ def program_data_set_state(program_data, state):
     program_data.state = state
 
 ## SegmentBlock flag field related.
-
-def _count_bits(v):
-    count = 0
-    while v:
-        count += 1
-        v >>= 1
-    return count
-
-def _make_bitmask(bitcount):
-    mask = 0
-    while bitcount:
-        bitcount -= 1
-        mask |= 1<<bitcount
-    return mask
-
-DATA_TYPE_CODE          = 1
-DATA_TYPE_ASCII         = 2
-DATA_TYPE_DATA08        = 3
-DATA_TYPE_DATA16        = 4
-DATA_TYPE_DATA32        = 5
-DATA_TYPE_BIT0          = DATA_TYPE_CODE - 1
-DATA_TYPE_BITCOUNT      = _count_bits(DATA_TYPE_DATA32)
-DATA_TYPE_BITMASK       = _make_bitmask(DATA_TYPE_BITCOUNT)
-
-DATA_TYPE_SIZES = [
-    (DATA_TYPE_DATA32, 4),
-    (DATA_TYPE_DATA16, 2),
-    (DATA_TYPE_DATA08, 1),
-]
 
 def __init_descending_data_sizes():
     def __get_descending_data_sizes_from(data_size):
@@ -116,10 +89,10 @@ class ProgramData(object):
         "List of blocks ordered by ascending address."
         self.blocks = []
         "Extra lines for the last block in a segment, for trailing labels."
-        self.post_segment_addresses = None # {}
+        self.post_segment_addresses: Optional[Dict[int, Any]] = None
         "Default flags"
         self.flags = 0
-        self.processor_id = 0 # loaderlib.constants.PROCESSOR_*
+        self.processor_id = Processor.UNKNOWN
 
         # disassemblylib:
         "Identifies which architecture the file has been identified as belonging to."
@@ -149,9 +122,9 @@ class ProgramData(object):
         "State the program data is in."
         self.state = STATE_LOADING
         "List of ascending block addresses (used by bisect for address based lookups)."
-        self.block_addresses = None # type: List[int]
+        self.block_addresses: Optional[List[int]] = None
         "List of ascending block first line numbers (used by bisect for line number based lookups)."
-        self.block_line0s = None # type: List[int]
+        self.block_line0s: Optional[List[int]] = None
         "If list of first line numbers need recalculating, this is the entry to start at."
         self.block_line0s_dirtyidx = 0
         "Callback application can register to be notified."
@@ -196,25 +169,25 @@ class ProgramData(object):
 
 class SegmentBlock(object):
     """ Sequential numbering in order of creation. """
-    sequence_id = None # type: int
+    sequence_id: Optional[int] = None
     last_sequence_id = 0
     """ The number of this segment in the file. """
-    segment_id = None # type: int
+    segment_id: Optional[int] = None
     """ The offset of this block in its segment. """
-    segment_offset = None # type: int
+    segment_offset: Optional[int] = None
     """ All segments appear as one contiguous address space.  This is the offset of this block in that space. """
-    address = None # type: int
+    address: Optional[int] = None
     """ The number of bytes data that this block contains. """
-    length = None # type: int
+    length: Optional[int] = None
     """ The data type of this block (DATA_TYPE_*) and more """
     flags = 0
     """ DATA_TYPE_CODE: [ line0_match, ... lineN_match ].
         DATA_TYPE_ASCII: [ (offset, length), ... ]. """
-    line_data = None # type: List[Any]
+    line_data: Optional[List[Any]] = None
     """ Calculated number of lines. """
     line_count = 0
     """ Cached potential address references. """
-    references = None # type: List[Tuple[int, int, str]]
+    references: Optional[List[Tuple[int, int, str]]] = None
 
     def __init__(self, copy_block=None):
         if copy_block is not None:
@@ -241,16 +214,18 @@ class SegmentBlock(object):
 
 class NewProjectOptions:
     # Binary file options.
-    dis_name = None # type: str
-    loader_load_address = None # type: int
-    loader_entrypoint_offset = None # type: int
-    is_binary_file = None # type: bool
-    processor_id = None # type: int
+    dis_name: Optional[str] = None
+    loader_load_address: Optional[int] = None
+    loader_entrypoint_offset: Optional[int] = None
+    is_binary_file: Optional[bool] = None
+    processor_id: Optional[int] = None
+    loader_filetype: FileFormat = FileFormat.UNKNOWN
+    loader_processor: Processor = Processor.UNKNOWN
 
 class LoadProjectOptions:
     valid_file_size = False
     valid_file_checksum = False # Unused.
 
 class SaveProjectOptions:
-    input_file = None # type: io.IOBase
-    save_file_path = None # type: str
+    input_file: Optional[io.IOBase] = None
+    save_file_path: Optional[str] = None

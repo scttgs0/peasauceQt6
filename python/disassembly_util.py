@@ -4,9 +4,14 @@
     Licensed using the MIT license.
 """
 
+from typing import Any, Optional
+
 import threading
 import traceback
 
+
+class WorkerEvent(threading.Event):
+    result: Optional[Any] = None
 
 class WorkState(object):
     completeness = 0.0
@@ -42,7 +47,7 @@ class WorkerThread(threading.Thread):
 
     def add_work(self, _callable, *_args, **_kwargs):
         self.lock.acquire()
-        completed_event = threading.Event()
+        completed_event = WorkerEvent()
         completed_event.result = None
         self.work_data.append((_callable, _args, _kwargs, completed_event))
 

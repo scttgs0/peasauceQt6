@@ -17,12 +17,13 @@ import unittest
 
 from Qt import QtCore, QtGui, QtWidgets
 
-import disassembly
-import disassembly_data
-import editor_state
-import qtui
-import toolapi
-import loaderlib
+from . import disassembly
+from . import disassembly_data
+from . import editor_state
+from . import qtui
+from . import toolapi
+from . import loaderlib
+from .loaderlib.constants import Processor
 
 
 class CORE_ProgramData_TestCase(unittest.TestCase):
@@ -110,7 +111,7 @@ class TOOL_UncertainReferenceModification_TestCase(unittest.TestCase):
         if not os.path.exists(FILE_NAME):
             self.skipTest("binary file dependency not available")
 
-        result = self.toolapiob.load_binary_file(FILE_NAME, loaderlib.constants.PROCESSOR_M680x0, 0x21000, 0x57B8A-0x21000)
+        result = self.toolapiob.load_binary_file(FILE_NAME, Processor.M680x0, 0x21000, 0x57B8A-0x21000)
         if type(result) is str:
             self.fail("loading error ('%s')" % result)
         if type(result) is not tuple:

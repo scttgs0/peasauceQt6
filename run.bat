@@ -1,1 +1,1 @@
-py -3 python\qtui.py
+py -3 -c "import python; python.qtui.run()"

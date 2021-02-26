@@ -1,5 +1,3 @@
-from __future__ import print_function
-
 """
     Peasauce - interactive disassembler
     Copyright (C) 2012-2017 Richard Tew
@@ -50,12 +48,12 @@ o HUNK_UNIT: An object file, as created by compilation, is composed of program u
 o HUNK_HEADER: A load file, as created by linking, lacks external references or program units.
 """
 
+from dataclasses import dataclass, field
 import pickle
 import os
 import logging
 import struct
-import sys
-from typing import List, Tuple
+from typing import IO, List, Optional, Tuple
 
 from .. import constants
 from .doshunks import *
@@ -76,12 +74,14 @@ MEMF_NAMES[MEMF_CHIP] = "CHIP"
 MEMF_NAMES[MEMF_FAST] = "FAST"
 
 
-class HunkFile(object):
-    _header_table_size = None # type: int
-    _first_hunk_slot = None # type: int
-    _last_hunk_slot = None # type: int
-    _header_segments = None # type: List[Tuple[int, int]]
-    _hunk_segments = None # type: List[Tuple[int, int, int, List[Tuple[int, List[int]]], List[Tuple[int, str, bool]]]]
+@dataclass
+class HunkFile:
+    header_table_size: int = 0
+    first_hunk_slot: int = -1
+    last_hunk_slot: int = -1
+    header_segments: List[Tuple[int, int]] = field(default_factory=list)
+    hunk_segments: List[Tuple[int, int, int, List[Tuple[int, List[int]]], List[Tuple[int, str, bool]]]] = field(default_factory=list)
+    resident_library_names: List[str] = field(default_factory=list)
 
 
 def identify_input_file(input_file, file_info, data_types, f_offset=0, f_length=None):
@@ -89,7 +89,7 @@ def identify_input_file(input_file, file_info, data_types, f_offset=0, f_length=
 
     if load_hunk_file(file_info, data_types, input_file, f_offset, f_length):
         result.platform_id = constants.PLATFORM_AMIGA
-        result.file_format_id = constants.FILE_FORMAT_AMIGA_HUNK_EXECUTABLE
+        result.file_format_id = constants.FileFormat.AMIGA_HUNK_EXECUTABLE
         result.confidence = constants.MATCH_CERTAIN
 
     return result
@@ -97,7 +97,7 @@ def identify_input_file(input_file, file_info, data_types, f_offset=0, f_length=
 def load_input_file(input_file, file_info, data_types, f_offset=0, f_length=None):
     return load_hunk_file(file_info, data_types, input_file, f_offset, f_length)
 
-def load_hunk_file(file_info, data_types, f, file_offset, file_length):
+def load_hunk_file(file_info, data_types, f: IO, file_offset, file_length):
     data = HunkFile()
 
     f.seek(file_offset, os.SEEK_SET)
@@ -113,24 +113,23 @@ def load_hunk_file(file_info, data_types, f, file_offset, file_length):
         f.seek(file_offset2, os.SEEK_SET)
 
     # OS actually fails loading executables if this doesn't just read a NULL longword.
-    data._resident_library_names = _read_hunk_strings(file_info, data_types, f)
+    data.resident_library_names = _read_hunk_strings(file_info, data_types, f)
 
-    data._header_table_size = data_types.uint32(f.read(4))
-    data._first_hunk_slot = data_types.uint32(f.read(4))
-    data._last_hunk_slot = data_types.uint32(f.read(4))
+    data.header_table_size = data_types.uint32(f.read(4))
+    data.first_hunk_slot = data_types.uint32(f.read(4))
+    data.last_hunk_slot = data_types.uint32(f.read(4))
 
-    l = []
-    segment_count = data._header_table_size
+    l = data.header_segments
+    segment_count = data.header_table_size
     while segment_count:
         slot_long = data_types.uint32(f.read(4))
         hunk_memory_flags = slot_long & 0xE0000000
         hunk_segment_length = (slot_long & 0x3FFFFFFF) * 4
         l.append((hunk_memory_flags, hunk_segment_length))
         segment_count -= 1
-    data._header_segments = l
 
     # Read in segments.
-    l = []
+    l = data.hunk_segments
     while f.tell() - file_offset != file_length:
         longword = data_types.uint32(f.read(4))
         # This should be the same as the header segment slot.  The header slot is what is used for the allocations, in any case.
@@ -187,7 +186,7 @@ def load_hunk_file(file_info, data_types, f, file_offset, file_length):
                 f.seek(4 * num_longwords, os.SEEK_CUR)
             elif hunk_id == HUNK_NAME:
                 # Optional.  Hunks with the same name are combined.
-                hunk_name = self._read_hunk_string(f)
+                hunk_name = _read_hunk_string(file_info, data_types, f)
             else:
                 logger.debug("hunkfile.py: _process_file: Unexpected secondary segment type: %X %s", hunk_id, HUNK_NAMES.get(hunk_id, "?"))
                 return False
@@ -195,15 +194,13 @@ def load_hunk_file(file_info, data_types, f, file_offset, file_length):
 
         l.append((segment_hunk_id, data_offset, data_length, relocations, symbols))
 
-    data._hunk_segments = l
-
-    if len(data._hunk_segments) != len(data._header_segments):
+    if len(data.hunk_segments) != len(data.header_segments):
         logger.debug("hunkfile.py: _process_file: header and actual hunks mismatched")
         return False
 
     persisted_data = []
-    for i, header_segment in enumerate(data._header_segments):
-        hunk_segment = data._hunk_segments[i]
+    for i, header_segment in enumerate(data.header_segments):
+        hunk_segment = data.hunk_segments[i]
         hunk_id = hunk_segment[0]
         data_offset = hunk_segment[1]
         data_length = hunk_segment[2]
@@ -249,7 +246,7 @@ def load_project_data(f):
     return data
 
 
-def _read_hunk_strings(file_info, data_types, f):
+def _read_hunk_strings(file_info, data_types, f: IO) -> List[str]:
     l = []
     s = _read_hunk_string(file_info, data_types, f)
     while len(s):
@@ -257,7 +254,7 @@ def _read_hunk_strings(file_info, data_types, f):
         s = _read_hunk_string(file_info, data_types, f)
     return l
 
-def _read_hunk_string(file_info, data_types, f, num_longs=None):
+def _read_hunk_string(file_info, data_types, f: IO, num_longs=None) -> str:
     if num_longs is None:
         num_longs = data_types.uint32(f.read(4))
     if num_longs > 0:
@@ -272,8 +269,8 @@ def _read_hunk_string(file_info, data_types, f, num_longs=None):
 def print_summary(file_info):
     data = file_info.file_data
 
-    for i, header_segment in enumerate(data._header_segments):
-        hunk_segment = data._hunk_segments[i]
+    for i, header_segment in enumerate(data.header_segments):
+        hunk_segment = data.hunk_segments[i]
         hunk_name = HUNK_NAMES[hunk_segment[0]]
         hunk_data_offset = hunk_segment[1]
         hunk_data_size = hunk_segment[2]
@@ -295,7 +292,7 @@ if False:
                         raise RuntimeError("Error", self.hunk_type[idx])
                     self.hunk_type[idx] = hunk_id
                     #
-                    self.unit_name = self._read_hunk_string(f, data_types)
+                    self.unit_name = _read_hunk_string(f, data_types)
                     if DEBUG_LEVEL >= DEBUG_HUNK_VERBOSE:
                         print("HUNK_UNIT", self.unit_name)
                 # ...
@@ -364,7 +361,7 @@ if False:
                         if debug_id == "HCLN":
                             # TODO: Work out line/offset encoding.
                             num_name_longwords = structures.read_uint32(f)
-                            file_name = self._read_hunk_string(f, num_name_longwords)
+                            file_name = _read_hunk_string(f, num_name_longwords)
                             if DEBUG_LEVEL >= DEBUG_HUNK_VERBOSE:
                                 print("  HUNK_DEBUG id=\"%s\" base_offset=%d file_name=\"%s\"" % (debug_id, debug_base, file_name))
                             data_longwords = num_longwords - 3 - num_name_longwords
@@ -397,7 +394,7 @@ if False:
                                 print(len(text), text)
                         elif debug_id == "LINE":
                             num_name_longwords = structures.read_uint32(f)
-                            file_name = self._read_hunk_string(f, num_name_longwords)
+                            file_name = _read_hunk_string(f, num_name_longwords)
                             loop_longwords = num_longwords - 3 - num_name_longwords
                             num_line_offsets = loop_longwords / 2
                             while loop_longwords > 0:
@@ -422,7 +419,7 @@ if False:
                             raise RuntimeError("New debug", num_longwords, debug_id, debug_base, hex(_pre_file_offset))
                 elif hunk_id == HUNK_NAME:
                     # Optional.  Hunks with the same name are combined.
-                    hunk_name = self._read_hunk_string(f)
+                    hunk_name = _read_hunk_string(f)
                     if DEBUG_LEVEL >= DEBUG_HUNK_VERBOSE:
                         print("  HUNK_NAME", symbol_name)
                 elif hunk_id == HUNK_EXT:
@@ -434,7 +431,7 @@ if False:
                         name_length = name_length & 0x00FFFFFF
                         symbol_name = ""
                         if name_length:
-                            symbol_name = self._read_hunk_string(f, name_length)
+                            symbol_name = _read_hunk_string(f, name_length)
                         if symbol_type in (EXT_DEF, EXT_ABS, EXT_RES):
                             symbol_value = structures.read_uint32(f)
                             if DEBUG_LEVEL >= DEBUG_HUNK_VERBOSE:

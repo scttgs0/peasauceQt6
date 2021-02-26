@@ -26,27 +26,23 @@ http://qt-project.org/wiki/Signals_and_Slots_in_PySide
 
 """
 
-import collections
 import pickle
 import logging
-#import new # type: ignore
 import operator
 import os
 import sys
 import time
-import traceback
-import types
 
 # mypy-lang support
 from typing import Any, List
 
-from Qt import QtCore, QtGui, QtWidgets # type: ignore
+from Qt import QtCore, QtGui, QtWidgets
 
-import disassemblylib
-import editor_state
-import res
-import util
-import toolapi
+from . import disassemblylib
+from . import editor_state
+from . import res
+from . import util
+from . import toolapi
 
 
 SETTINGS_FILE = "settings.pikl"
@@ -70,7 +66,7 @@ class BaseItemModel(QtCore.QAbstractItemModel):
     def __init__(self, columns, parent):
         self.window = parent
 
-        super(BaseItemModel, self).__init__(parent)
+        super(BaseItemModel, self).__init__()
 
         self._header_data = {}
 
@@ -413,13 +409,13 @@ class QTUIEditorClient(editor_state.ClientAPI, QtCore.QObject):
             return open(save_file_path, "wb")
 
     def request_text(self, title_text, prompt_text, default_text=""):
-        text, ok = QtGui.QInputDialog.getText(self.owner_ref(), title_text, prompt_text, QtWidgets.QLineEdit.Normal, default_text)
+        text, ok = QtWidgets.QInputDialog.getText(self.owner_ref(), title_text, prompt_text, QtWidgets.QLineEdit.Normal, default_text)
         text = text.strip()
         if ok and text != '':
             return text
 
     def request_address(self, default_address):
-        text, ok = QtGui.QInputDialog.getText(self.owner_ref(), "Which address?", "Address:", QtWidgets.QLineEdit.Normal, "0x%X" % default_address)
+        text, ok = QtWidgets.QInputDialog.getText(self.owner_ref(), "Which address?", "Address:", QtWidgets.QLineEdit.Normal, "0x%X" % default_address)
         text = text.strip()
         if ok and text != '':
             return util.str_to_int(text)
@@ -435,13 +431,14 @@ class QTUIEditorClient(editor_state.ClientAPI, QtCore.QObject):
             return dialog.selection_key
 
     def request_label_name(self, default_label_name):
-        text, ok = QtGui.QInputDialog.getText(self.owner_ref(), "Rename symbol", "New name:", QtWidgets.QLineEdit.Normal, default_label_name)
+        text, ok = QtWidgets.QInputDialog.getText(self.owner_ref(), "Rename symbol", "New name:", QtWidgets.QLineEdit.Normal, default_label_name)
         text = text.strip()
         if ok and text != default_label_name:
             return text
 
-    def event_tick(self, active_client):
-        QtWidgets.qApp.processEvents()
+    def event_tick(self, active_client) -> None:
+        global app
+        app.processEvents()
 
     ## Events related to the lifetime of an attempt to load a file.
     # It does not appear to be necessary to delegate these to the GUI thread.
@@ -712,7 +709,7 @@ class MainWindow(QtWidgets.QMainWindow):
         #self.save_project_as_action = QtWidgets.QAction("Save project as..", self, statusTip="Save currently loaded project under a specified name", triggered=self.interaction_request_save_project_as)
         self.export_source_action = QtWidgets.QAction("&Export source", self, statusTip="Export source code", triggered=self.interaction_request_export_source)
         self.quit_action = QtWidgets.QAction("&Quit", self, shortcut="Ctrl+Q", statusTip="Quit the application", triggered=self.menu_file_quit)
-        
+
         self.edit_undo_action = QtWidgets.QAction("Undo", self, shortcut="Ctrl+Z", statusTip="Undo the last action", triggered=self.interaction_undo_last_action)
         self.edit_redo_action = QtWidgets.QAction("Redo", self, shortcut="Ctrl+Y", statusTip="Redo the last action", triggered=self.interaction_redo_from_action_stack)
 
@@ -816,7 +813,7 @@ class MainWindow(QtWidgets.QMainWindow):
         ## Uncertain code references list table.
         QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.uncertain_code_references_table, self.interaction_uncertain_code_references_view_push_symbol).setContext(QtCore.Qt.WidgetShortcut)
         ## Uncertain data references list table.
-        QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.uncertain_data_references_table, self.interaction_uncertain_data_references_view_push_symbol).setContext(QtCore.Qt.WidgetShortcut)        
+        QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.uncertain_data_references_table, self.interaction_uncertain_data_references_view_push_symbol).setContext(QtCore.Qt.WidgetShortcut)
         QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Space), self.uncertain_data_references_table, self.interaction_show_row_contextmenu).setContext(QtCore.Qt.WidgetShortcut)
 
     def reset_all(self):
@@ -1081,7 +1078,7 @@ class MainWindow(QtWidgets.QMainWindow):
         if not other:
             logger.debug("scroll_to_line line=%d", new_line_idx)
         index = self.list_model.index(new_line_idx, 0, QtCore.QModelIndex())
-        #self.list_table.selectionModel().setCurrentIndex(index, QtGui.QItemSelectionModel.ClearAndSelect)
+        #self.list_table.selectionModel().setCurrentIndex(index, QtCore.QItemSelectionModel.ClearAndSelect)
         self.list_table.scrollTo(index, QtWidgets.QAbstractItemView.PositionAtCenter)
         self.list_table.setFocus()
         # NOTE(rmtew): The table is single row selection, but leaves rows selected resulting in multiple rows!
@@ -1518,9 +1515,9 @@ class LoadProjectDialog(QtWidgets.QDialog):
         ## Buttons layout.
         load_button = QtWidgets.QPushButton("Load")
         load_button.setEnabled(False)
+        load_button.clicked.connect(self.accept)
         cancel_button = QtWidgets.QPushButton("Cancel")
-        self.connect(load_button, QtCore.SIGNAL("clicked()"), self, QtCore.SLOT("accept()"))
-        self.connect(cancel_button, QtCore.SIGNAL("clicked()"), self, QtCore.SLOT("reject()"))
+        cancel_button.clicked.connect(self.reject)
 
         buttons_layout = QtWidgets.QHBoxLayout()
         buttons_layout.addWidget(load_button, QtCore.Qt.AlignRight)
@@ -1556,9 +1553,9 @@ class SaveProjectDialog(QtWidgets.QDialog):
 
         ## Buttons layout.
         save_button = QtWidgets.QPushButton("Save")
+        save_button.clicked.connect(self.accept)
         cancel_button = QtWidgets.QPushButton("Cancel")
-        self.connect(save_button, QtCore.SIGNAL("clicked()"), self, QtCore.SLOT("accept()"))
-        self.connect(cancel_button, QtCore.SIGNAL("clicked()"), self, QtCore.SLOT("reject()"))
+        cancel_button.clicked.connect(self.reject)
 
         buttons_layout = QtWidgets.QHBoxLayout()
         buttons_layout.addWidget(save_button, QtCore.Qt.AlignRight)
@@ -1741,9 +1738,9 @@ class RowSelectionDialog(QtWidgets.QDialog):
         table.horizontalHeader().setStretchLastSection(True)
         table.setFont(self.parent().list_table.font())
         # No selection of individual cells, but rather line specific selection.
-        table.setSelectionMode(QtWidgets.SingleSelection)
-        table.setSelectionBehavior(QtWidgets.SelectRows)
-        table.setVerticalScrollMode(QtWidgets.ScrollPerItem)
+        table.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        table.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        table.setVerticalScrollMode(QtWidgets.QAbstractItemView.ScrollPerItem)
         table.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         # Adjust the row data display.
         table.resizeColumnsToContents()
@@ -1751,10 +1748,10 @@ class RowSelectionDialog(QtWidgets.QDialog):
         # Ensure the first row is selected.
         index = self.table_model.index(0, 0, QtCore.QModelIndex())
         table.scrollTo(index, QtWidgets.QAbstractItemView.PositionAtCenter)
-        table.selectionModel().setCurrentIndex(index, QtGui.QItemSelectionModel.Select)
+        table.selectionModel().setCurrentIndex(index, QtCore.QItemSelectionModel.Select)
 
         button_widget = QtWidgets.QPushButton(button_text, self)
-        self.connect(button_widget, QtCore.SIGNAL("clicked()"), self, QtCore.SLOT("accept()"))
+        button_widget.clicked.connect(self.accept)
 
         outer_vertical_layout = QtWidgets.QVBoxLayout()
         outer_vertical_layout.addWidget(label_widget)
@@ -1808,6 +1805,7 @@ def _initialise_logging(window):
 
 
 def run():
+    global app
     app = QtWidgets.QApplication(sys.argv)
 
     window = MainWindow()
@@ -1874,7 +1872,7 @@ def run():
         return
     # Close window and exit (if only it worked...).
     window.close()
-    QtWidgets.QApplication.quit()
+    app.quit()
 
 if __name__ == '__main__':
     run()

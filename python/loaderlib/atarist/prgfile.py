@@ -19,7 +19,7 @@ import os
 import struct
 import sys
 import logging
-from typing import Tuple
+from typing import List, Optional, Tuple
 
 from .. import constants
 
@@ -53,14 +53,14 @@ class PRGFile(object):
     _data_segment_size = 0
     _bss_segment_size = 0
     _symbol_table_size = 0
-    _reserved1 = None # type: int
-    _reserved2 = None # type: int
-    _reserved3 = None # type: int
+    _reserved1: Optional[int] = None
+    _reserved2: Optional[int] = None
+    _reserved3: Optional[int] = None
 
     # Processed file metadata.
-    _hunk_sizes = None # type: List[Tuple[int, int, int, int]]
-    _symbol_table_entries = None # type: List[Tuple[str, int, int]]
-    _fixup_offsets = None # type: List[Tuple[int, List[int]]]
+    _hunk_sizes: Optional[List[Tuple[int, int, int, int]]] = None
+    _symbol_table_entries: Optional[List[Tuple[str, int, int]]] = None
+    _fixup_offsets: Optional[List[Tuple[int, List[int]]]] = None
 
 EXPECTED_SUFFIX = "prg"
 
@@ -72,7 +72,7 @@ def identify_input_file(input_file, file_info, data_types, f_offset=0, f_length=
 
     if load_prg_file(file_info, data_types, input_file, f_offset, f_length):
         result.platform_id = constants.PLATFORM_ATARIST
-        result.file_format_id = constants.FILE_FORMAT_ATARIST_GEMDOS_EXECUTABLE
+        result.file_format_id = constants.FileFormat.ATARIST_GEMDOS_EXECUTABLE
         result.confidence = constants.MATCH_CERTAIN
 
     return result

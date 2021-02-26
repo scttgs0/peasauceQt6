@@ -20,7 +20,7 @@ import os
 import sys
 import types
 
-import toolapi
+from . import toolapi
 
 logger = logging.getLogger("UI")
 
@@ -31,7 +31,7 @@ ERRMSG_UNKNOWN_COMMAND = "unknown command"
 
 def check_user_approves_exit(toolapiob):
     if toolapiob.editor_state.in_loaded_state():
-        response = raw_input(PROMPTMSG_ABANDON_WORK).strip().lower()
+        response = input(PROMPTMSG_ABANDON_WORK).strip().lower()
         if response[0] == "y":
             return True
         return False
@@ -137,10 +137,11 @@ def main_loop():
         if toolapiob.editor_state.in_loaded_state():
             prompt = ": "
         try:
-            cli_text = raw_input(prompt).strip()
+            cli_text = input(prompt).strip()
         except EOFError:
             # Ctrl-z pressed.
             command_quit(toolapiob)
+            return
 
         cli_number = None
         if cli_text == "":

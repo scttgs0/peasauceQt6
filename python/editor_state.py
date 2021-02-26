@@ -16,14 +16,15 @@ import operator
 import os
 import types
 import weakref
-from typing import Any
+from typing import Any, Optional
 
-import disassembly
-import disassembly_data # DATA TYPES ONLY
-import disassembly_persistence
-import disassembly_util
-import loaderlib
-import util
+from . import disassembly
+from . import disassembly_data # DATA TYPES ONLY
+from . import disassembly_persistence
+from . import disassembly_util
+from . import loaderlib
+from .loaderlib.constants import DATA_TYPE_DATA08, DATA_TYPE_DATA16, DATA_TYPE_DATA32, DATA_TYPE_ASCII, DATA_TYPE_CODE
+from . import util
 
 
 TEXT_SELECT_REFERRING_ADDRESS_SHORT = "Go to which referring address?"
@@ -138,7 +139,7 @@ class EditorState(object):
     STATE_LOADING = 1
     STATE_LOADED = 2
 
-    disassembly_state = None # type: disassembly.DisassemblyApi
+    disassembly_state: Optional[disassembly.DisassemblyApi] = None
 
     def __init__(self):
         self.worker_thread = disassembly_util.WorkerThread()
@@ -218,15 +219,15 @@ class EditorState(object):
 
     def get_data_type_for_address(self, acting_client, address):
         data_type = self.disassembly_state.get_data_type_for_address(address)
-        if data_type == disassembly_data.DATA_TYPE_CODE:
+        if data_type == DATA_TYPE_CODE:
             return "code"
-        elif data_type == disassembly_data.DATA_TYPE_ASCII:
+        elif data_type == DATA_TYPE_ASCII:
             return "ascii"
-        elif data_type == disassembly_data.DATA_TYPE_DATA08:
+        elif data_type == DATA_TYPE_DATA08:
             return "8bit"
-        elif data_type == disassembly_data.DATA_TYPE_DATA16:
+        elif data_type == DATA_TYPE_DATA16:
             return "16bit"
-        elif data_type == disassembly_data.DATA_TYPE_DATA32:
+        elif data_type == DATA_TYPE_DATA32:
             return "32bit"
 
     def get_source_code_for_address(self, acting_client, address):
@@ -429,14 +430,14 @@ class EditorState(object):
 
     def goto_previous_code_block(self, acting_client):
         line_idx = self.get_line_number(acting_client)
-        new_line_idx = self.disassembly_state.get_next_block_line_number(disassembly_data.DATA_TYPE_CODE, line_idx, -1)
+        new_line_idx = self.disassembly_state.get_next_block_line_number(DATA_TYPE_CODE, line_idx, -1)
         if new_line_idx is None:
             return ERRMSG_NO_IDENTIFIABLE_DESTINATION
         self.set_line_number(acting_client, new_line_idx)
 
     def goto_previous_data_block(self, acting_client):
         line_idx = self.get_line_number(acting_client)
-        new_line_idx = self.disassembly_state.get_next_block_line_number(disassembly_data.DATA_TYPE_CODE, line_idx, -1, operator.ne)
+        new_line_idx = self.disassembly_state.get_next_block_line_number(DATA_TYPE_CODE, line_idx, -1, operator.ne)
         if new_line_idx is None:
             return ERRMSG_NO_IDENTIFIABLE_DESTINATION
         self.set_line_number(acting_client, new_line_idx)
@@ -454,14 +455,14 @@ class EditorState(object):
 
     def goto_next_code_block(self, acting_client):
         line_idx = self.get_line_number(acting_client)
-        new_line_idx = self.disassembly_state.get_next_block_line_number(disassembly_data.DATA_TYPE_CODE, line_idx, 1)
+        new_line_idx = self.disassembly_state.get_next_block_line_number(DATA_TYPE_CODE, line_idx, 1)
         if new_line_idx is None:
             return ERRMSG_NO_IDENTIFIABLE_DESTINATION
         self.set_line_number(acting_client, new_line_idx)
 
     def goto_next_data_block(self, acting_client):
         line_idx = self.get_line_number(acting_client)
-        new_line_idx = self.disassembly_state.get_next_block_line_number(disassembly_data.DATA_TYPE_CODE, line_idx, 1, operator.ne)
+        new_line_idx = self.disassembly_state.get_next_block_line_number(DATA_TYPE_CODE, line_idx, 1, operator.ne)
         if new_line_idx is None:
             return ERRMSG_NO_IDENTIFIABLE_DESTINATION
         self.set_line_number(acting_client, new_line_idx)
@@ -479,11 +480,11 @@ class EditorState(object):
     ## UNCERTAIN REFERENCES:
 
     def _uncertain_reference_modification_callback(self, data_type_from, data_type_to, address, length):
-        if data_type_from == disassembly_data.DATA_TYPE_CODE:
+        if data_type_from == DATA_TYPE_CODE:
             data_type_from = "CODE"
         else:
             data_type_from = "DATA"
-        if data_type_to == disassembly_data.DATA_TYPE_CODE:
+        if data_type_to == DATA_TYPE_CODE:
             data_type_to = "CODE"
         else:
             data_type_to = "DATA"
@@ -521,6 +522,7 @@ class EditorState(object):
             return ERRMSG_TODO_BAD_STATE_FUNCTIONALITY
 
         current_address = self.get_address(acting_client)
+        assert current_address is not None
         symbol_name = self.disassembly_state.get_symbol_for_address(current_address)
         # Prompt user to edit the current label, or add a new one.
         new_symbol_name = acting_client.request_label_name(symbol_name)
@@ -535,6 +537,7 @@ class EditorState(object):
             return ERRMSG_TODO_BAD_STATE_FUNCTIONALITY
 
         current_address = self.get_address(acting_client)
+        assert current_address is not None
         self.disassembly_state.insert_reference_address(current_address)
 
     def set_datatype_code(self, acting_client):
@@ -544,7 +547,7 @@ class EditorState(object):
         address = self.get_address(acting_client)
         if address is None:
             return ERRMSG_BUG_UNKNOWN_ADDRESS
-        self._set_data_type(acting_client, address, disassembly_data.DATA_TYPE_CODE)
+        self._set_data_type(acting_client, address, DATA_TYPE_CODE)
 
     def set_datatype_32bit(self, acting_client):
         if self.state_id != EditorState.STATE_LOADED:
@@ -553,7 +556,7 @@ class EditorState(object):
         address = self.get_address(acting_client)
         if address is None:
             return ERRMSG_BUG_UNKNOWN_ADDRESS
-        self._set_data_type(acting_client, address, disassembly_data.DATA_TYPE_DATA32)
+        self._set_data_type(acting_client, address, DATA_TYPE_DATA32)
 
     def set_datatype_16bit(self, acting_client):
         if self.state_id != EditorState.STATE_LOADED:
@@ -562,7 +565,7 @@ class EditorState(object):
         address = self.get_address(acting_client)
         if address is None:
             return ERRMSG_BUG_UNKNOWN_ADDRESS
-        self._set_data_type(acting_client, address, disassembly_data.DATA_TYPE_DATA16)
+        self._set_data_type(acting_client, address, DATA_TYPE_DATA16)
 
     def set_datatype_8bit(self, acting_client):
         if self.state_id != EditorState.STATE_LOADED:
@@ -571,7 +574,7 @@ class EditorState(object):
         address = self.get_address(acting_client)
         if address is None:
             return ERRMSG_BUG_UNKNOWN_ADDRESS
-        self._set_data_type(acting_client, address, disassembly_data.DATA_TYPE_DATA08)
+        self._set_data_type(acting_client, address, loaderlib.constants.DATA_TYPE_DATA08)
 
     def set_datatype_ascii(self, acting_client):
         if self.state_id != EditorState.STATE_LOADED:
@@ -580,7 +583,7 @@ class EditorState(object):
         address = self.get_address(acting_client)
         if address is None:
             return ERRMSG_BUG_UNKNOWN_ADDRESS
-        self._set_data_type(acting_client, address, disassembly_data.DATA_TYPE_ASCII)
+        self._set_data_type(acting_client, address, DATA_TYPE_ASCII)
 
     def _set_data_type(self, acting_client, address, data_type):
         self._prolonged_action(acting_client, "TITLE_DATA_TYPE_CHANGE", "TEXT_GENERIC_PROCESSING", self.disassembly_state.set_data_type_at_address, address, data_type, can_cancel=False)
@@ -646,8 +649,6 @@ class EditorState(object):
                 new_options.is_binary_file = True
                 new_options.loader_load_address = 0
                 new_options.loader_entrypoint_offset = 0
-                new_options.loader_filetype = loaderlib.constants.FILE_FORMAT_UNKNOWN
-                new_options.loader_processor = ""
             # Prompt for new project option values.
             new_option_result = acting_client.request_new_project_option_values(new_options)
             if new_option_result is None or type(new_option_result) is str:

@@ -83,7 +83,7 @@ def identify_input_file(input_file, file_info, data_types, f_offset=0, f_length=
 
     if load_x_file(file_info, data_types, input_file, f_offset, f_length):
         result.platform_id = constants.PLATFORM_X68000
-        result.file_format_id = constants.FILE_FORMAT_X68000_X_EXECUTABLE
+        result.file_format_id = constants.FileFormat.X68000_X_EXECUTABLE
         result.confidence = constants.MATCH_CERTAIN
 
     return result

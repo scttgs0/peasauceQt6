@@ -35,7 +35,7 @@ class File(object):
     EXPECTED_SUFFIX = "smc"
 
     # header field values.
-    _header_page_count_8kb = None # type: int
+    header_page_count_8kb: int = 0
 
 
 def identify_input_file(input_file, file_info, data_types, f_offset=0, f_length=None):
@@ -45,8 +45,8 @@ def identify_input_file(input_file, file_info, data_types, f_offset=0, f_length=
         result.confidence = constants.MATCH_POSSIBLE
 
     if load_smc_file(file_info, data_types, input_file, f_offset, f_length):
-        result.platform_id = PLATFORM_SNES
-        result.file_format_id = constants.FILE_FORMAT_X68000_X_EXECUTABLE
+        result.platform_id = constants.PLATFORM_SNES
+        result.file_format_id = constants.FileFormat.X68000_X_EXECUTABLE
         result.confidence = constants.MATCH_CERTAIN
 
     return result
@@ -65,7 +65,7 @@ def load_smc_file(file_info, data_types, f, f_offset=0, f_length=None):
     # Offset    Bytes   ...
     data = File()
     # 0         2       8kb page count
-    data._header_page_count_8kb = data_types.uint16(f.read(2))
+    data.header_page_count_8kb = data_types.uint16(f.read(2))
     # 2         1       emulation mode?
     f.read(1)
     # 3         5       reserved

@@ -9,10 +9,12 @@ import logging
 import os
 import struct
 import time
+from typing import List
 
-from disassembly_data import *
-import loaderlib
-import persistence
+from .disassembly_data import *
+from . import loaderlib
+from .loaderlib.constants import DATA_TYPE_CODE, Processor
+from . import persistence
 
 
 logger = logging.getLogger("disassembly-persistence")
@@ -80,7 +82,7 @@ def read_SegmentBlock(f):
                     block.line_data[i] = (type_id, text)
     return block
 
-def read_segment_list(f):
+def read_segment_list(f) -> List[loaderlib.Segment]:
     num_bytes = persistence.read_uint32(f)
     data_start_offset = f.tell()
     v = []
@@ -88,38 +90,37 @@ def read_segment_list(f):
         v.append(read_segment_list_entry(f))
     return v
 
-def write_segment_list(f, v):
+def write_segment_list(f: io.IOBase, segments: List[loaderlib.Segment]) -> None:
     start_offset = f.tell()
     persistence.write_uint32(f, 0)
     data_start_offset = f.tell()
-    for entry in v:
-        write_segment_list_entry(f, entry)
+    for segment in segments:
+        write_segment_list_entry(f, segment)
     end_offset = f.tell()
     f.seek(start_offset, os.SEEK_SET)
     persistence.write_uint32(f, end_offset - data_start_offset)
     f.seek(end_offset, os.SEEK_SET)
 
-def read_segment_list_entry(f):
-    v = [ None ] * loaderlib.SIZEOF_SI
-    v[loaderlib.SI_TYPE] = persistence.read_uint8(f)
+def read_segment_list_entry(f: io.IOBase) -> loaderlib.Segment:
+    segment_type = persistence.read_uint8(f)
     offset_value = persistence.read_uint32(f)
     if offset_value == 0xFFFFFFFF: # Unsigned, special value.
         offset_value = -1
-    v[loaderlib.SI_FILE_OFFSET] = offset_value
-    v[loaderlib.SI_DATA_LENGTH] = persistence.read_uint32(f)
-    v[loaderlib.SI_LENGTH] = persistence.read_uint32(f)
-    v[loaderlib.SI_ADDRESS] = persistence.read_uint32(f)
-    return v
+    data_length = persistence.read_uint32(f)
+    segment_length = persistence.read_uint32(f)
+    segment_address = persistence.read_uint32(f)
+    return loaderlib.Segment(segment_type, offset_value, data_length, segment_length,
+        segment_address, None)
 
-def write_segment_list_entry(f, v):
-    persistence.write_uint8(f, v[loaderlib.SI_TYPE])
-    if v[loaderlib.SI_FILE_OFFSET] == -1:
+def write_segment_list_entry(f: io.IOBase, segment: loaderlib.Segment) -> None:
+    persistence.write_uint8(f, segment.type)
+    if segment.file_offset == -1:
         persistence.write_uint32(f, 0xFFFFFFFF) # Unsigned, special value.
     else:
-        persistence.write_uint32(f, v[loaderlib.SI_FILE_OFFSET])
-    persistence.write_uint32(f, v[loaderlib.SI_DATA_LENGTH])
-    persistence.write_uint32(f, v[loaderlib.SI_LENGTH])
-    persistence.write_uint32(f, v[loaderlib.SI_ADDRESS])
+        persistence.write_uint32(f, segment.file_offset)
+    persistence.write_uint32(f, segment.data_length)
+    persistence.write_uint32(f, segment.length)
+    persistence.write_uint32(f, segment.address)
 
 
 SAVEFILE_ID = 0x5053504a
@@ -363,9 +364,9 @@ def convert_project_format_3_to_4(input_file):
 
         # Only these two are likely to have been in use.
         if processor_name == "m68k":
-            processor_id = loaderlib.constants.PROCESSOR_M680x0
+            processor_id = Processor.M680x0
         elif processor_name == "mips":
-            processor_id = loaderlib.constants.PROCESSOR_MIPS
+            processor_id = Processor.MIPS
         else:
             logger.error("convert_project_format_3_to_4: unrecognised arch name %s", processor_name)
             return None

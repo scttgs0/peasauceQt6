@@ -5,14 +5,14 @@
 """
 
 from .. import constants
+from ..constants import Endian, Processor
+from ..system import BaseSystem
 from . import z80file
 
 
-class System(object):
-    endian_id = constants.ENDIAN_LITTLE
-
-    def get_processor_id(self):
-        return constants.PROCESSOR_Z80
+class System(BaseSystem):
+    endian_id = Endian.LITTLE
+    processor_id = Processor.Z80
 
     def identify_input_file(self, input_file, file_info, data_types, f_offset=0, f_length=None):
         matches = []
@@ -40,7 +40,7 @@ class System(object):
     def get_segment_header(self, file_info, segment_id):
         return "this section header should never be seen"
 
-    def get_data_instruction_string(self, is_bss_segment, with_file_data):
+    def get_data_instruction_string(self, data_size: int, is_bss_segment: bool, with_file_data: bool) -> str:
         suffix_by_size = {
             constants.DATA_TYPE_DATA08: "B",
             constants.DATA_TYPE_DATA16: "W",

@@ -26,7 +26,7 @@ class EnglishStrings(BaseResource):
 
 strings = EnglishStrings()
 
-import loaderlib
+from . import loaderlib
 
 PLATFORM_KEY = 1
 FILE_FORMAT_KEY = 2

@@ -5,15 +5,15 @@
 """
 
 from .. import constants
+from ..constants import Endian, Processor
+from ..system import BaseSystem
 from . import doshunks
 from . import hunkfile
 
 
-class System(object):
-    endian_id = constants.ENDIAN_BIG
-
-    def get_processor_id(self):
-        return constants.PROCESSOR_M680x0
+class System(BaseSystem):
+    endian_id = Endian.BIG
+    processor_id = Processor.M680x0
 
     def load_input_file(self, input_file, file_info, data_types, f_offset=0, f_length=None):
         return hunkfile.load_input_file(input_file, file_info, data_types, f_offset, f_length)

@@ -14,7 +14,7 @@ import types
 # mypy-lang support
 from typing import Tuple, Union, IO
 
-import editor_state
+from . import editor_state
 
 
 ERRMSG_FILE_DOES_NOT_EXIST = "File does not exist."
