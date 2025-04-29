@@ -901,7 +901,7 @@ class MainWindow(QtWidgets.QMainWindow):
             self.scroll_to_line(self.editor_state.get_line_number(self.editor_client))
 
     def menu_settings_choose_font(self):
-        font, ok = QtGui.QFontDialog.getFont(self.list_table.font(), self)
+        font, ok = QtWidgets.QFontDialog.getFont(self.list_table.font(), self)
         if font and ok:
             self.list_table.setFont(font)
             self.uncertain_code_references_table.setFont(font)
