@@ -15,7 +15,7 @@ import sys
 import types
 import unittest
 
-from Qt import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets
 
 from . import disassembly
 from . import disassembly_data
