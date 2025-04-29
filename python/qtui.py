@@ -16,7 +16,7 @@ PySide eccentricities:
 - Changing the font used in the TableView will not change the height of the rows, resulting
   in clipping of text.  The font height needs to be obtained and the row height changed
   accordingly.
-- Table selection behaviour is flakey.  Despite setting both single-selection and row
+- Table selection behavior is flakey.  Despite setting both single-selection and row
   selection, various things will do multi-selection of both rows, and bizarre item
   (single cell) selection.
 
@@ -36,7 +36,8 @@ import time
 # mypy-lang support
 from typing import Any, List
 
-from Qt import QtCore, QtGui, QtWidgets
+from PySide6 import QtCore, QtGui, QtWidgets, QtGui
+from PySide6.QtGui import QAction, QShortcut
 
 from . import disassemblylib
 from . import editor_state
@@ -406,7 +407,7 @@ class QTUIEditorClient(editor_state.ClientAPI, QtCore.QObject):
         options = QtWidgets.QFileDialog.Options()
         save_file_path, filter_text = QtWidgets.QFileDialog.getSaveFileName(self.owner_ref(), caption="Export source code to...", filter=SOURCE_CODE_FILTER, options=options)
         if len(save_file_path):
-            return open(save_file_path, "wb")
+            return open(save_file_path, "w")
 
     def request_text(self, title_text, prompt_text, default_text=""):
         text, ok = QtWidgets.QInputDialog.getText(self.owner_ref(), title_text, prompt_text, QtWidgets.QLineEdit.Normal, default_text)
@@ -704,40 +705,40 @@ class MainWindow(QtWidgets.QMainWindow):
         dock.setObjectName("dock-orphaned-blocks") # State/geometry persistence requirement.
 
     def create_menus(self):
-        self.open_action = QtWidgets.QAction("&Open file", self, shortcut="Ctrl+O", statusTip="Disassemble a new file", triggered=self.menu_file_open)
-        self.save_project_action = QtWidgets.QAction("&Save project", self, statusTip="Save currently loaded project", triggered=self.interaction_request_save_project)
-        #self.save_project_as_action = QtWidgets.QAction("Save project as..", self, statusTip="Save currently loaded project under a specified name", triggered=self.interaction_request_save_project_as)
-        self.export_source_action = QtWidgets.QAction("&Export source", self, statusTip="Export source code", triggered=self.interaction_request_export_source)
-        self.quit_action = QtWidgets.QAction("&Quit", self, shortcut="Ctrl+Q", statusTip="Quit the application", triggered=self.menu_file_quit)
+        self.open_action = QAction("&Open file", self, shortcut="Ctrl+O", statusTip="Disassemble a new file", triggered=self.menu_file_open)
+        self.save_project_action = QAction("&Save project", self, statusTip="Save currently loaded project", triggered=self.interaction_request_save_project)
+        #self.save_project_as_action = QAction("Save project as..", self, statusTip="Save currently loaded project under a specified name", triggered=self.interaction_request_save_project_as)
+        self.export_source_action = QAction("&Export source", self, statusTip="Export source code", triggered=self.interaction_request_export_source)
+        self.quit_action = QAction("&Quit", self, shortcut="Ctrl+Q", statusTip="Quit the application", triggered=self.menu_file_quit)
 
-        self.edit_undo_action = QtWidgets.QAction("Undo", self, shortcut="Ctrl+Z", statusTip="Undo the last action", triggered=self.interaction_undo_last_action)
-        self.edit_redo_action = QtWidgets.QAction("Redo", self, shortcut="Ctrl+Y", statusTip="Redo the last action", triggered=self.interaction_redo_from_action_stack)
+        self.edit_undo_action = QAction("Undo", self, shortcut="Ctrl+Z", statusTip="Undo the last action", triggered=self.interaction_undo_last_action)
+        self.edit_redo_action = QAction("Redo", self, shortcut="Ctrl+Y", statusTip="Redo the last action", triggered=self.interaction_redo_from_action_stack)
 
-        self.edit_datatype_submenu_action = QtWidgets.QAction("Change address datatype", self, statusTip="Change data type at current address")
-        self.edit_set_datatype_code_action = QtWidgets.QAction("Code", self, shortcut="Alt+C", statusTip="Change data type to code", triggered=self.interaction_set_datatype_code)
-        self.edit_set_datatype_32bit_action = QtWidgets.QAction("32 bit", self, shortcut="Alt+3", statusTip="Change data type to 32 bit", triggered=self.interaction_set_datatype_32bit)
-        self.edit_set_datatype_16bit_action = QtWidgets.QAction("16 bit", self, shortcut="Alt+2", statusTip="Change data type to 16 bit", triggered=self.interaction_set_datatype_16bit)
-        self.edit_set_datatype_8bit_action = QtWidgets.QAction("8 bit", self, shortcut="Alt+1", statusTip="Change data type to 8 bit", triggered=self.interaction_set_datatype_8bit)
-        self.edit_set_datatype_ascii_action = QtWidgets.QAction("ASCII", self, shortcut="Alt+A", statusTip="Change data type to ascii", triggered=self.interaction_set_datatype_ascii)
+        self.edit_datatype_submenu_action = QAction("Change address datatype", self, statusTip="Change data type at current address")
+        self.edit_set_datatype_code_action = QAction("Code", self, shortcut="Alt+C", statusTip="Change data type to code", triggered=self.interaction_set_datatype_code)
+        self.edit_set_datatype_32bit_action = QAction("32 bit", self, shortcut="Alt+3", statusTip="Change data type to 32 bit", triggered=self.interaction_set_datatype_32bit)
+        self.edit_set_datatype_16bit_action = QAction("16 bit", self, shortcut="Alt+2", statusTip="Change data type to 16 bit", triggered=self.interaction_set_datatype_16bit)
+        self.edit_set_datatype_8bit_action = QAction("8 bit", self, shortcut="Alt+1", statusTip="Change data type to 8 bit", triggered=self.interaction_set_datatype_8bit)
+        self.edit_set_datatype_ascii_action = QAction("ASCII", self, shortcut="Alt+A", statusTip="Change data type to ascii", triggered=self.interaction_set_datatype_ascii)
 
-        self.edit_numericbase_submenu_action = QtWidgets.QAction("Operand numeric base", self, statusTip="Change numeric base of selected operand")
-        self.edit_set_numericbase_decimal_action = QtWidgets.QAction("Decimal", self, statusTip="Change numeric base to decimal", triggered=lambda: None)
-        self.edit_set_numericbase_hexadecimal_action = QtWidgets.QAction("Hexadecimal", self, statusTip="Change numeric base to hexadecimal", triggered=lambda: None)
-        self.edit_set_numericbase_binary_action = QtWidgets.QAction("Binary", self, statusTip="Change numeric base to binary", triggered=lambda: None)
+        self.edit_numericbase_submenu_action = QAction("Operand numeric base", self, statusTip="Change numeric base of selected operand")
+        self.edit_set_numericbase_decimal_action = QAction("Decimal", self, statusTip="Change numeric base to decimal", triggered=lambda: None)
+        self.edit_set_numericbase_hexadecimal_action = QAction("Hexadecimal", self, statusTip="Change numeric base to hexadecimal", triggered=lambda: None)
+        self.edit_set_numericbase_binary_action = QAction("Binary", self, statusTip="Change numeric base to binary", triggered=lambda: None)
 
-        self.search_find = QtWidgets.QAction("Find..", self, statusTip="Find some specific text", triggered=self.menu_search_find)
-        self.goto_address_action = QtWidgets.QAction("Go to address", self, shortcut="Ctrl+G", statusTip="View a specific address", triggered=self.menu_search_goto_address)
+        self.search_find = QAction("Find..", self, statusTip="Find some specific text", triggered=self.menu_search_find)
+        self.goto_address_action = QAction("Go to address", self, shortcut="Ctrl+G", statusTip="View a specific address", triggered=self.menu_search_goto_address)
         if True:
-            self.search_previous_submenu_action = QtWidgets.QAction("Previous", self, statusTip="Previous navigation options")
-            self.search_previous_code_block_action = QtWidgets.QAction("Go to previous code block", self, shortcut="Ctrl+Shift+C", statusTip="View previous code block", triggered=self.menu_search_goto_previous_code_block)
-            self.search_previous_data_block_action = QtWidgets.QAction("Go to previous data block", self, shortcut="Ctrl+Shift+D", statusTip="View previous data block", triggered=self.menu_search_goto_previous_data_block)
-            self.search_previous_text_match_action = QtWidgets.QAction("Go to previous text match", self, shortcut="Ctrl+Shift+F", statusTip="View previous text match", triggered=self.menu_search_goto_previous_text_match)
+            self.search_previous_submenu_action = QAction("Previous", self, statusTip="Previous navigation options")
+            self.search_previous_code_block_action = QAction("Go to previous code block", self, shortcut="Ctrl+Shift+C", statusTip="View previous code block", triggered=self.menu_search_goto_previous_code_block)
+            self.search_previous_data_block_action = QAction("Go to previous data block", self, shortcut="Ctrl+Shift+D", statusTip="View previous data block", triggered=self.menu_search_goto_previous_data_block)
+            self.search_previous_text_match_action = QAction("Go to previous text match", self, shortcut="Ctrl+Shift+F", statusTip="View previous text match", triggered=self.menu_search_goto_previous_text_match)
         if True:
-            self.search_next_submenu_action = QtWidgets.QAction("Next", self, statusTip="Next navigation options")
-            self.search_next_code_block_action = QtWidgets.QAction("Go to next code block", self, shortcut="Ctrl+C", statusTip="View next code block", triggered=self.menu_search_goto_next_code_block)
-            self.search_next_data_block_action = QtWidgets.QAction("Go to next data block", self, shortcut="Ctrl+D", statusTip="View next data block", triggered=self.menu_search_goto_next_data_block)
-            self.search_next_text_match_action = QtWidgets.QAction("Go to next text match", self, shortcut="Ctrl+F", statusTip="View next text match", triggered=self.menu_search_goto_next_text_match)
-        self.choose_font_action = QtWidgets.QAction("Select disassembly font", self, statusTip="Change the font used in the disassembly view", triggered=self.menu_settings_choose_font)
+            self.search_next_submenu_action = QAction("Next", self, statusTip="Next navigation options")
+            self.search_next_code_block_action = QAction("Go to next code block", self, shortcut="Ctrl+C", statusTip="View next code block", triggered=self.menu_search_goto_next_code_block)
+            self.search_next_data_block_action = QAction("Go to next data block", self, shortcut="Ctrl+D", statusTip="View next data block", triggered=self.menu_search_goto_next_data_block)
+            self.search_next_text_match_action = QAction("Go to next text match", self, shortcut="Ctrl+F", statusTip="View next text match", triggered=self.menu_search_goto_next_text_match)
+        self.choose_font_action = QAction("Select disassembly font", self, statusTip="Change the font used in the disassembly view", triggered=self.menu_settings_choose_font)
 
         self.file_menu = self.menuBar().addMenu("&File")
         self.file_menu.addAction(self.open_action)
@@ -796,25 +797,25 @@ class MainWindow(QtWidgets.QMainWindow):
     def create_shortcuts(self):
         ## Main disassembly list table.
         # Place the current location on the browsing stack, and go to the address of the referenced symbol.
-        QtWidgets.QShortcut(QtGui.QKeySequence(self.tr("Ctrl+Right")), self.list_table, self.interaction_view_push_symbol).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(self.tr("Ctrl+Right")), self.list_table, self.interaction_view_push_symbol).setContext(QtCore.Qt.WidgetShortcut)
         # Go back in the browsing stack.
-        QtWidgets.QShortcut(QtGui.QKeySequence(self.tr("Ctrl+Left")), self.list_table, self.interaction_view_pop_symbol).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(self.tr("Ctrl+Left")), self.list_table, self.interaction_view_pop_symbol).setContext(QtCore.Qt.WidgetShortcut)
         # Display referring addresses.
-        QtWidgets.QShortcut(QtGui.QKeySequence(self.tr("Shift+Ctrl+Right")), self.list_table, self.interaction_view_referring_symbols).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(self.tr("Shift+Ctrl+Right")), self.list_table, self.interaction_view_referring_symbols).setContext(QtCore.Qt.WidgetShortcut)
         # Edit the name of a label.
-        QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.list_table, self.interaction_rename_symbol).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.list_table, self.interaction_rename_symbol).setContext(QtCore.Qt.WidgetShortcut)
         # ...
-        QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_1), self.list_table, self.interaction_select_operand_1).setContext(QtCore.Qt.WidgetShortcut)
-        QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_2), self.list_table, self.interaction_select_operand_2).setContext(QtCore.Qt.WidgetShortcut)
-        QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_3), self.list_table, self.interaction_select_operand_3).setContext(QtCore.Qt.WidgetShortcut)
-        QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Left), self.list_table, self.interaction_select_operand_previous).setContext(QtCore.Qt.WidgetShortcut)
-        QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Right), self.list_table, self.interaction_select_operand_next).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_1), self.list_table, self.interaction_select_operand_1).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_2), self.list_table, self.interaction_select_operand_2).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_3), self.list_table, self.interaction_select_operand_3).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Left), self.list_table, self.interaction_select_operand_previous).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Right), self.list_table, self.interaction_select_operand_next).setContext(QtCore.Qt.WidgetShortcut)
 
         ## Uncertain code references list table.
-        QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.uncertain_code_references_table, self.interaction_uncertain_code_references_view_push_symbol).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.uncertain_code_references_table, self.interaction_uncertain_code_references_view_push_symbol).setContext(QtCore.Qt.WidgetShortcut)
         ## Uncertain data references list table.
-        QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.uncertain_data_references_table, self.interaction_uncertain_data_references_view_push_symbol).setContext(QtCore.Qt.WidgetShortcut)
-        QtWidgets.QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Space), self.uncertain_data_references_table, self.interaction_show_row_contextmenu).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Return), self.uncertain_data_references_table, self.interaction_uncertain_data_references_view_push_symbol).setContext(QtCore.Qt.WidgetShortcut)
+        QShortcut(QtGui.QKeySequence(QtCore.Qt.Key_Space), self.uncertain_data_references_table, self.interaction_show_row_contextmenu).setContext(QtCore.Qt.WidgetShortcut)
 
     def reset_all(self):
         self.reset_ui()

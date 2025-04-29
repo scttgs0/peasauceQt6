@@ -1,3 +1,5 @@
+2025-04-28
+    - Migrate to PySide6 (Qt6).
 2017-02-03
 	- For binary files, attempt some initial naive identification of pointers
 	  within the loaded binary data, and adding automatic symbols for them.

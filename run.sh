@@ -1,3 +1,2 @@
 #!/bin/bash
-[ -f /c/python27/python.exe ] && export PYTHON=/c/python27/python.exe || export PYTHON=python
-$PYTHON python/qtui.py $@
+python3 -c "import python; python.qtui.run()"
