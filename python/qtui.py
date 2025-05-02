@@ -1355,8 +1355,8 @@ def _make_inputdata_options(dialog, group_title, keep_input_data=True):
       Instead, a custom label class is created that responds to mouse press
       events.  This leaves gaps in the clickable areas.
     """
-    dialog.inputdata_do_radio = QtGui.QRadioButton()
-    dialog.inputdata_dont_radio = QtGui.QRadioButton()
+    dialog.inputdata_do_radio = QtWidgets.QRadioButton()
+    dialog.inputdata_dont_radio = QtWidgets.QRadioButton()
     inputdata_do_short_label = ClickableLabel("Saved work SHOULD contain source/input file data.")
     inputdata_do_short_label.clicked.connect(dialog.inputdata_do_radio.click)
     inputdata_do_long_label = ClickableLabel("When you load your saved work, you WILL NOT need to provide the source/input file.")
